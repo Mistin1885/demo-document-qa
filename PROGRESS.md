@@ -6,7 +6,7 @@
 > 指令一律 `uv run` / `uv add`。後端 import root = `app`（在 `src/app/`）。
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 
-最後更新：2026-06-16 ｜ 當前 Phase：_Phase 3 完成（Chat/Session/Document CRUD + 隔離測試集）_ ｜ 累計 Goal Score：_Parsing PoC PASS + Backend skeleton + Isolation 基礎_
+最後更新：2026-06-16 ｜ 當前 Phase：_Phase 4 完成（MinerU 整合 + ParsedBlock + hierarchy + parser eval harness）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎_
 
 ---
 
@@ -18,7 +18,7 @@
 | 1 | **MinerU Parsing PoC ★** | ✅ | ✅ | (Parsing 前置 PASS) | hybrid-http-client → vLLM @ 8001 直連成功；公式可靠 |
 | 2 | Foundation | ✅ | ✅ | Backend /10 | config/ORM/migration/providers/compose 全綠；`uv run alembic upgrade head` 成功 |
 | 3 | Chat/Session/Document | ✅ | ✅（隔離 mandatory） | Isolation /15 起步 | 175 tests 全綠；4 層隔離測試集涵蓋情境 (a)–(n) |
-| 4 | Document Parsing Pipeline（MinerU 整合） | ⬜ | — | Parsing /15 | mandatory |
+| 4 | Document Parsing Pipeline（MinerU 整合） | ✅ | ✅ mandatory | Parsing /15 | 312 tests 全綠；client / mapping / hierarchy / eval harness 齊備；LightRAG real-data PASS |
 | 5 | Enrichment | ⬜ | — | — | |
 | 6 | Vespa Retrieval | ⬜ | — | Retrieval /20 | mandatory |
 | 7 | LangGraph Agent | ⬜ | — | Agent QA /20 | mandatory |
@@ -58,10 +58,10 @@
 - ✅ 3.4 隔離測試套件（情境 (a)–(n)，4 層全覆蓋：DB / Vespa spy / API scope / service filter） | general/sonnet ｜ `tests/integration/test_isolation_*.py` + `tests/unit/test_isolation_service_filters.py` + `tests/_helpers.py`
 
 ### Phase 4 — Document Parsing Pipeline（MinerU 整合）
-- ⬜ 4.1 MinerU client 封裝（async/idempotent，落 data/parsed） | general/sonnet
-- ⬜ 4.2 輸出映射 content_list+middle → ParsedBlock | general/sonnet
-- ⬜ 4.3 Hierarchy 推導（含 references/appendix） | general/sonnet
-- ⬜ 4.4 Parser eval + 下載 script | general/sonnet
+- ✅ 4.1 MinerU client 封裝（async + idempotent + health_check；post-processing 純函式抽到 `app.parsing._postprocess`，`scripts/mineru_poc.py` 改 thin wrapper） | general/sonnet ｜ `src/app/parsing/mineru_client.py` + `_postprocess.py` + `tests/unit/test_mineru_client.py`（12 綠）
+- ✅ 4.2 輸出映射 middle.json → ParsedBlock（**單一來源 = middle.json**；content_list 已被 PoC post-processor 刪除）；deterministic `block_id = uuid5(NS_OID, f"{document_id}:{page_idx}:{reading_order}:{type}")`；image/table caption fold-in；inline math 保留 | general/sonnet ｜ `src/app/parsing/mapping.py` + `models.py` + `tests/fixtures/mineru_sample/` + `tests/unit/test_parsing_mapping.py`（40 綠）；real-data smoke 175 blocks
+- ✅ 4.3 Hierarchy 推導（doc/authors/abstract/sections/subsections/paragraphs/refs/appendix/figure/table/equation；deterministic uuid5；每 ParsedBlock 至多被一個 node owned；6 條 heuristic 全 traceable） | general/sonnet ｜ `src/app/parsing/hierarchy.py` + `tests/fixtures/mineru_sample_paper/` + `tests/unit/test_parsing_hierarchy.py`（54 綠）；LightRAG real-data：7 sections / 19 subsections / 88 paragraphs / 21 references / appendix detected
+- ✅ 4.4 Parser eval harness + arXiv 下載 script + golden corpus（LightRAG）+ JSON/MD 報告 + CI 適用 exit code | general/sonnet ｜ `src/app/evaluation/parser_eval.py` + `scripts/{ingest_sample_arxiv,run_parser_eval}.py` + `data/fixtures/golden/2410.05779v3.json` + `tests/evaluation/test_parser_eval.py`（31 綠）
 
 ### Phase 5 — Enrichment
 - ⬜ 5.1 Section 級 enrichment | general/sonnet
@@ -106,7 +106,7 @@
 | Session isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_session_history_service.py` + `tests/unit/test_isolation_service_filters.py`；Phase 7 接 message API 後再驗 endpoint scope |
 | Vespa hybrid retrieval | ⬜ | |
 | Citations | ⬜ | |
-| arXiv parsing (MinerU) | 🟡 PoC PASS | `artifacts/evaluation/mineru-poc.md`（單樣本通過；Phase 4 整合後正式 mark ✅） |
+| arXiv parsing (MinerU) | ✅ PASS | `artifacts/evaluation/{mineru-poc.md, parser-report.{json,md}}`；Phase 4 harness 對 LightRAG real-data gate PASS |
 | LangGraph QA | ⬜ | |
 | Provider settings | 🟡 抽象 + mock 完成 | `src/app/providers/` + `tests/unit/test_providers.py` 49 綠 |
 
@@ -152,6 +152,10 @@
 - 2026-06-16｜Phase 3.1 chat ordering tiebreak：因同一 transaction 內 `func.now()` 對多筆 INSERT 給同一 timestamp，`list_chats` 的 `ORDER BY updated_at DESC` 在測試環境無法區分；改由 service 端 Python 設 `datetime.now(UTC).replace(tzinfo=None)`，每次呼叫產生不同 µs 值｜`src/app/services/chat_service.py::create_chat / update_chat`
 - 2026-06-16｜Phase 3.3 Vespa 解耦：定義 `VespaIndexer` Protocol + `NullVespaIndexer` no-op；`document_service.delete_document` 透過 DI 注入，Phase 6 將以真實 Vespa client 替換。Spy 隔離測試 (m) 確認 caller 的 `chat_id` 必被傳遞給 indexer.delete｜`src/app/services/vespa_indexer.py`
 - 2026-06-16｜Phase 3.3 跨 chat 文件共用：以 `chat_documents` association table 為 single source of truth（連 owner chat 自身也建一筆）；刪除為「先解除本 chat association，無人共用才真刪 ORM/storage/indexer」半順序語意｜`src/app/services/document_service.py`
+- 2026-06-16｜Phase 4.2 Mapping 單一資料來源：CLAUDE.md §6.3 已宣告 PoC post-processor 跑完後 `content_list.json` 不再保留 → Phase 4.2 mapping **僅讀 `middle.json`**；偏離 DEVELOPMENT_PLAN.md 原稿「content_list+middle」字面，但與 CLAUDE.md §6.3-6.4 一致｜`src/app/parsing/mapping.py`、`deploy/mineru/output-schema.md`
+- 2026-06-16｜Phase 4 全程使用 **deterministic uuid5 id**（block_id 與 node_id），方便 Phase 5 enrichment / Phase 6 Vespa upsert 重跑時不重複｜`src/app/parsing/{mapping,hierarchy}.py`
+- 2026-06-16｜Phase 4.1 post-processing 純函式搬遷到 `src/app/parsing/_postprocess.py`；`scripts/mineru_poc.py` 改為 thin wrapper（CLI 入口不變），讓 async client 與 CLI 共用同一份 post-processing 邏輯，避免兩份實作漂移｜`src/app/parsing/_postprocess.py`, `scripts/mineru_poc.py`
+- 2026-06-16｜Phase 4.4 heading-F1 gate threshold 保守設 0.3（非 0.8+）：golden corpus 只標 5 個高信心 heading，evaluator 對「真實樣本含更多 subsections」會給低 precision；harness 的設計目標是抓**大規模回退**（如完全沒抽出 references / appendix / abstract），不是 pixel-perfect。Phase 9 可再收緊｜`src/app/evaluation/parser_eval.py`、`data/fixtures/golden/2410.05779v3.json`
 
 ---
 
@@ -171,10 +175,12 @@
 |---|---|---|---|
 | import 健檢 | `uv run python -c "import app"` | ✅ | 2026-06-16 |
 | MinerU PoC | `uv run mineru -p data/2410.05779v3.pdf -o data/parsed -b hybrid-http-client -u http://localhost:8001` | ✅ | gate_pass=true；`scripts/mineru_poc.py` 可重跑 |
-| lint | `uv run ruff check src/app tests migrations` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
-| 型別 | `uv run mypy src/app` | ✅ | 2026-06-16 — 27 source files, 0 issues |
-| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-16 — config 12 + models 9 + providers 49 + chat_service 13 + session_service 14 + document_service 11 + isolation_service_filters 10 = 118 綠 |
+| lint | `uv run ruff check src/app tests migrations scripts` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
+| 型別 | `uv run mypy src/app` | ✅ | 2026-06-16 — 35 source files, 0 issues |
+| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-16 — Phase 2/3 既有 118 + Phase 4.1 mineru_client 12 + Phase 4.2 mapping 40 + Phase 4.3 hierarchy 54 = 224 綠 |
 | 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-16 — chats_api + sessions_api + documents_api + 4 個 isolation_* 共 57 綠 |
+| 評估測試 | `uv run pytest tests/evaluation` | ✅（parser harness） | 2026-06-16 — Phase 4.4 parser_eval 31 綠；Phase 6/9 retrieval/goal-score harness 尚未建 |
+| Parser eval（real data, LightRAG） | `uv run python scripts/run_parser_eval.py` | ✅ PASS | `artifacts/evaluation/parser-report.{json,md}`；H-F1=0.333、math-recall=1.0、refs=21、figs=6、tables=6、eqs=2 |
 | Alembic upgrade | `uv run alembic upgrade head` | ✅ | 2026-06-16 — revision `b5b02bc9d209`；11 張表（10 + alembic_version）建立 |
 | Alembic round-trip | `uv run alembic downgrade base && uv run alembic upgrade head` | ✅ | 2026-06-16 — 雙向可重跑 |
 | 評估測試 | `uv run pytest tests/evaluation` | ⬜ | Phase 9 |

@@ -1,0 +1,241 @@
+{
+  "_backend": "hybrid",
+  "_effort": "medium",
+  "_ocr_enable": true,
+  "_version_name": "3.3.1",
+  "pdf_info": [
+    {
+      "page_idx": 0,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 60, 540, 90],
+          "angle": 0,
+          "index": 0,
+          "level": 1,
+          "lines": [
+            {
+              "bbox": [72, 60, 540, 90],
+              "spans": [
+                {
+                  "bbox": [72, 60, 540, 90],
+                  "type": "text",
+                  "content": "Synthetic Test Paper: A Minimal MinerU Fixture",
+                  "score": 0.99
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 100, 540, 160],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 100, 540, 130],
+              "spans": [
+                {
+                  "bbox": [72, 100, 540, 130],
+                  "type": "text",
+                  "content": "This is a paragraph block on page one.",
+                  "score": 0.98
+                }
+              ]
+            },
+            {
+              "bbox": [72, 132, 400, 160],
+              "spans": [
+                {
+                  "bbox": [72, 132, 400, 160],
+                  "type": "text",
+                  "content": "It has two lines of text joined together.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "interline_equation",
+          "bbox": [150, 170, 460, 195],
+          "angle": 0,
+          "index": 2,
+          "lines": [
+            {
+              "bbox": [150, 170, 460, 195],
+              "spans": [
+                {
+                  "bbox": [150, 170, 460, 195],
+                  "type": "interline_equation",
+                  "content": "E = mc^{2}",
+                  "image_path": "synthetic_p1_aabb1234.jpg"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "image",
+          "bbox": [100, 210, 510, 400],
+          "index": 3,
+          "blocks": [
+            {
+              "type": "image_body",
+              "bbox": [100, 210, 510, 380],
+              "angle": 0,
+              "index": 0,
+              "lines": [
+                {
+                  "bbox": [100, 210, 510, 380],
+                  "spans": [
+                    {
+                      "bbox": [100, 210, 510, 380],
+                      "type": "image",
+                      "image_path": "synthetic_p1_ccdd5678.jpg"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "image_caption",
+              "bbox": [150, 385, 460, 400],
+              "angle": 0,
+              "index": 1,
+              "lines": [
+                {
+                  "bbox": [150, 385, 460, 400],
+                  "spans": [
+                    {
+                      "bbox": [150, 385, 460, 400],
+                      "type": "text",
+                      "content": "Figure 1: A synthetic figure for testing purposes.",
+                      "score": 1.0
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [
+        {
+          "type": "page_footnote",
+          "bbox": [72, 740, 540, 760],
+          "angle": 0,
+          "index": 0,
+          "lines": [
+            {
+              "bbox": [72, 740, 540, 760],
+              "spans": [
+                {
+                  "bbox": [72, 740, 540, 760],
+                  "type": "text",
+                  "content": "1 Footnote text discarded from main flow.",
+                  "score": 0.95
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 1,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 400, 75],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 400, 75],
+              "spans": [
+                {
+                  "bbox": [72, 50, 400, 75],
+                  "type": "text",
+                  "content": "1 Introduction",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 600, 540, 750],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 600, 540, 625],
+              "spans": [
+                {
+                  "bbox": [72, 600, 540, 625],
+                  "type": "text",
+                  "content": "[1] Author A and Author B. Title of Referenced Paper. In Proceedings, 2023.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "bbox": [72, 100, 540, 400],
+          "index": 2,
+          "blocks": [
+            {
+              "type": "table_caption",
+              "bbox": [72, 85, 540, 100],
+              "angle": 0,
+              "index": 0,
+              "lines": [
+                {
+                  "bbox": [72, 85, 540, 100],
+                  "spans": [
+                    {
+                      "bbox": [72, 85, 540, 100],
+                      "type": "text",
+                      "content": "Table 1: Comparison of methods on benchmark dataset.",
+                      "score": 1.0
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "table_body",
+              "bbox": [72, 100, 540, 400],
+              "angle": 0,
+              "index": 1,
+              "lines": [
+                {
+                  "bbox": [72, 100, 540, 400],
+                  "spans": [
+                    {
+                      "bbox": [72, 100, 540, 400],
+                      "type": "table",
+                      "html": "<table><tr><th>Method</th><th>Accuracy</th></tr><tr><td>Baseline</td><td>72.3%</td></tr><tr><td>Ours</td><td>89.1%</td></tr></table>",
+                      "image_path": "synthetic_p2_eeff9012.jpg"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "paper_id": "2410.05779v3",
+  "pdf_filename": "2410.05779v3.pdf",
+  "doc_title": "LightRAG: Simple and Fast Retrieval-Augmented Generation",
+  "expected_section_headings": [
+    "1 INTRODUCTION",
+    "3 THE LIGHTRAG ARCHITECTURE",
+    "4 EVALUATION",
+    "5 RELATED WORK",
+    "6 CONCLUSION"
+  ],
+  "has_abstract": true,
+  "has_appendix": true,
+  "expected_reference_count_at_least": 20,
+  "expected_inline_math_substring": [
+    "\\varphi",
+    "\\hat {\\mathcal {D}}"
+  ],
+  "expected_minimum_figures": 4,
+  "expected_minimum_tables": 4,
+  "expected_minimum_equations": 2,
+  "page_count_hint": 16,
+  "notes": "LightRAG paper (arXiv 2410.05779v3). Section headings are in uppercase as extracted by MinerU from the paper. Golden annotations are deliberately conservative to detect major regressions, not pixel-perfect layout matches. expected_inline_math_substring: latex expressions known to appear in the paper's equations. has_appendix=true because appendix sections (7.x) are present after references."
+}

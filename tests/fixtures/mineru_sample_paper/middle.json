@@ -1,0 +1,840 @@
+{
+  "_backend": "hybrid",
+  "_effort": "medium",
+  "_ocr_enable": true,
+  "_version_name": "3.3.1",
+  "pdf_info": [
+    {
+      "page_idx": 0,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 60, 540, 90],
+          "angle": 0,
+          "index": 0,
+          "level": 1,
+          "lines": [
+            {
+              "bbox": [72, 60, 540, 90],
+              "spans": [
+                {
+                  "bbox": [72, 60, 540, 90],
+                  "type": "text",
+                  "content": "Adaptive Retrieval-Augmented Generation for Scientific Document QA",
+                  "score": 0.99
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 100, 540, 130],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 100, 540, 130],
+              "spans": [
+                {
+                  "bbox": [72, 100, 540, 130],
+                  "type": "text",
+                  "content": "Alice Researcher<sup>1</sup>, Bob Scholar<sup>2</sup>, Carol Scientist<sup>1,3</sup>",
+                  "score": 0.98
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 135, 540, 155],
+          "angle": 0,
+          "index": 2,
+          "lines": [
+            {
+              "bbox": [72, 135, 540, 155],
+              "spans": [
+                {
+                  "bbox": [72, 135, 540, 155],
+                  "type": "text",
+                  "content": "<sup>1</sup>University of AI, <sup>2</sup>Institute of NLP, <sup>3</sup>Lab for Information Retrieval",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 175, 200, 195],
+          "angle": 0,
+          "index": 3,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 175, 200, 195],
+              "spans": [
+                {
+                  "bbox": [72, 175, 200, 195],
+                  "type": "text",
+                  "content": "Abstract",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 200, 540, 290],
+          "angle": 0,
+          "index": 4,
+          "lines": [
+            {
+              "bbox": [72, 200, 540, 260],
+              "spans": [
+                {
+                  "bbox": [72, 200, 540, 260],
+                  "type": "text",
+                  "content": "We present AdaptRAG, a novel framework for retrieval-augmented generation that dynamically adjusts retrieval granularity based on query complexity. Our approach demonstrates significant improvements over baseline systems on multiple benchmarks, achieving state-of-the-art performance while reducing computational overhead.",
+                  "score": 0.98
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 310, 230, 330],
+          "angle": 0,
+          "index": 5,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 310, 230, 330],
+              "spans": [
+                {
+                  "bbox": [72, 310, 230, 330],
+                  "type": "text",
+                  "content": "1 Introduction",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 335, 540, 440],
+          "angle": 0,
+          "index": 6,
+          "lines": [
+            {
+              "bbox": [72, 335, 540, 440],
+              "spans": [
+                {
+                  "bbox": [72, 335, 540, 440],
+                  "type": "text",
+                  "content": "Large language models have demonstrated remarkable capabilities in natural language understanding and generation tasks. However, these models suffer from hallucination and outdated knowledge problems that limit their applicability in knowledge-intensive domains. Retrieval-augmented generation (RAG) addresses this limitation by conditioning model outputs on retrieved evidence from external knowledge bases.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [
+        {
+          "type": "page_number",
+          "bbox": [280, 760, 332, 775],
+          "angle": 0,
+          "index": 0,
+          "lines": [
+            {
+              "bbox": [280, 760, 332, 775],
+              "spans": [
+                {
+                  "bbox": [280, 760, 332, 775],
+                  "type": "text",
+                  "content": "1",
+                  "score": 0.99
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 1,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 350, 70],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 350, 70],
+              "spans": [
+                {
+                  "bbox": [72, 50, 350, 70],
+                  "type": "text",
+                  "content": "2 Related Work",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 80, 540, 180],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 80, 540, 180],
+              "spans": [
+                {
+                  "bbox": [72, 80, 540, 180],
+                  "type": "text",
+                  "content": "Prior work on retrieval-augmented generation spans multiple research directions. DPR (Karpukhin et al., 2020) introduced dense passage retrieval using dual-encoder architectures. RAG (Lewis et al., 2020) combined retrieval with sequence-to-sequence generation. More recent work has focused on improving retrieval quality and generation faithfulness.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 210, 400, 230],
+          "angle": 0,
+          "index": 2,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 210, 400, 230],
+              "spans": [
+                {
+                  "bbox": [72, 210, 400, 230],
+                  "type": "text",
+                  "content": "3 Methodology",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 245, 450, 265],
+          "angle": 0,
+          "index": 3,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 245, 450, 265],
+              "spans": [
+                {
+                  "bbox": [72, 245, 450, 265],
+                  "type": "text",
+                  "content": "3.1 Adaptive Retrieval Module",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 275, 540, 380],
+          "angle": 0,
+          "index": 4,
+          "lines": [
+            {
+              "bbox": [72, 275, 540, 380],
+              "spans": [
+                {
+                  "bbox": [72, 275, 540, 380],
+                  "type": "text",
+                  "content": "The adaptive retrieval module dynamically selects retrieval granularity based on a query complexity score. Given a query q, we compute a complexity score c(q) using a lightweight classifier. The granularity level g is then determined by thresholding c(q) against learned boundaries.",
+                  "score": 0.98
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 400, 460, 420],
+          "angle": 0,
+          "index": 5,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 400, 460, 420],
+              "spans": [
+                {
+                  "bbox": [72, 400, 460, 420],
+                  "type": "text",
+                  "content": "3.2 Generation with Retrieved Context",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 430, 540, 520],
+          "angle": 0,
+          "index": 6,
+          "lines": [
+            {
+              "bbox": [72, 430, 540, 520],
+              "spans": [
+                {
+                  "bbox": [72, 430, 540, 520],
+                  "type": "text",
+                  "content": "Given the retrieved context C = {c_1, ..., c_k}, the generation model produces an answer conditioned on both the query and the retrieved passages. We employ a cross-attention mechanism to weight the retrieved context appropriately.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 2,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "image",
+          "bbox": [72, 50, 540, 320],
+          "index": 0,
+          "blocks": [
+            {
+              "type": "image_body",
+              "bbox": [72, 50, 540, 290],
+              "angle": 0,
+              "index": 0,
+              "lines": [
+                {
+                  "bbox": [72, 50, 540, 290],
+                  "spans": [
+                    {
+                      "bbox": [72, 50, 540, 290],
+                      "type": "image",
+                      "image_path": "adaptrag_p3_a1b2c3d4.jpg"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "image_caption",
+              "bbox": [100, 295, 510, 320],
+              "angle": 0,
+              "index": 1,
+              "lines": [
+                {
+                  "bbox": [100, 295, 510, 320],
+                  "spans": [
+                    {
+                      "bbox": [100, 295, 510, 320],
+                      "type": "text",
+                      "content": "Figure 1: Overview of the AdaptRAG framework. The query complexity classifier routes queries to different retrieval granularities.",
+                      "score": 0.99
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 340, 540, 430],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 340, 540, 430],
+              "spans": [
+                {
+                  "bbox": [72, 340, 540, 430],
+                  "type": "text",
+                  "content": "Figure 1 illustrates the overall architecture of our proposed system. The input query first passes through the complexity classifier, which outputs a granularity level. Based on this level, the retrieval module queries the knowledge base at different levels of granularity.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "interline_equation",
+          "bbox": [150, 445, 460, 470],
+          "angle": 0,
+          "index": 2,
+          "lines": [
+            {
+              "bbox": [150, 445, 460, 470],
+              "spans": [
+                {
+                  "bbox": [150, 445, 460, 470],
+                  "type": "interline_equation",
+                  "content": "P(y|q, C) = \\prod_{t=1}^{T} P(y_t | y_{<t}, q, C)",
+                  "image_path": "adaptrag_p3_eq1_e5f6a7b8.jpg"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 3,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "table",
+          "bbox": [72, 50, 540, 280],
+          "index": 0,
+          "blocks": [
+            {
+              "type": "table_caption",
+              "bbox": [72, 35, 540, 50],
+              "angle": 0,
+              "index": 0,
+              "lines": [
+                {
+                  "bbox": [72, 35, 540, 50],
+                  "spans": [
+                    {
+                      "bbox": [72, 35, 540, 50],
+                      "type": "text",
+                      "content": "Table 1: Performance comparison on NaturalQuestions and TriviaQA benchmarks.",
+                      "score": 1.0
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "table_body",
+              "bbox": [72, 50, 540, 280],
+              "angle": 0,
+              "index": 1,
+              "lines": [
+                {
+                  "bbox": [72, 50, 540, 280],
+                  "spans": [
+                    {
+                      "bbox": [72, 50, 540, 280],
+                      "type": "table",
+                      "html": "<table><tr><th>Model</th><th>NQ EM</th><th>TQA EM</th><th>Latency (ms)</th></tr><tr><td>DPR + FiD</td><td>51.4</td><td>67.6</td><td>230</td></tr><tr><td>RAG-Token</td><td>44.5</td><td>56.8</td><td>180</td></tr><tr><td>AdaptRAG (ours)</td><td><b>56.2</b></td><td><b>72.1</b></td><td>145</td></tr></table>",
+                      "image_path": "adaptrag_p4_table1_c9d0e1f2.jpg"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 300, 540, 380],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 300, 540, 380],
+              "spans": [
+                {
+                  "bbox": [72, 300, 540, 380],
+                  "type": "text",
+                  "content": "Table 1 shows the performance comparison. AdaptRAG achieves state-of-the-art results on both benchmarks while significantly reducing inference latency compared to DPR+FiD.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 4,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 350, 70],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 350, 70],
+              "spans": [
+                {
+                  "bbox": [72, 50, 350, 70],
+                  "type": "text",
+                  "content": "4 Experiments",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 80, 540, 180],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 80, 540, 180],
+              "spans": [
+                {
+                  "bbox": [72, 80, 540, 180],
+                  "type": "text",
+                  "content": "We evaluate AdaptRAG on three standard QA benchmarks: NaturalQuestions (NQ), TriviaQA (TQA), and WebQuestions (WQ). Our experiments demonstrate the effectiveness of the adaptive retrieval strategy across different query types and difficulty levels.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 210, 450, 230],
+          "angle": 0,
+          "index": 2,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 210, 450, 230],
+              "spans": [
+                {
+                  "bbox": [72, 210, 450, 230],
+                  "type": "text",
+                  "content": "4.1 Experimental Setup",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 245, 540, 340],
+          "angle": 0,
+          "index": 3,
+          "lines": [
+            {
+              "bbox": [72, 245, 540, 340],
+              "spans": [
+                {
+                  "bbox": [72, 245, 540, 340],
+                  "type": "text",
+                  "content": "We use Wikipedia as our knowledge base with 21 million 100-word passages. Dense retrieval uses a pre-trained DPR encoder fine-tuned on NQ training data. The generation model is T5-large (770M parameters) fine-tuned on each downstream task.",
+                  "score": 0.98
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [72, 360, 460, 380],
+          "angle": 0,
+          "index": 4,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 360, 460, 380],
+              "spans": [
+                {
+                  "bbox": [72, 360, 460, 380],
+                  "type": "text",
+                  "content": "4.2 Main Results",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 390, 540, 480],
+          "angle": 0,
+          "index": 5,
+          "lines": [
+            {
+              "bbox": [72, 390, 540, 480],
+              "spans": [
+                {
+                  "bbox": [72, 390, 540, 480],
+                  "type": "text",
+                  "content": "The main results are reported in Table 1. AdaptRAG outperforms all baseline methods on both NQ and TQA datasets. The adaptive strategy provides the most benefit on complex multi-hop questions, where fine-grained retrieval is most important.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 5,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 350, 70],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 350, 70],
+              "spans": [
+                {
+                  "bbox": [72, 50, 350, 70],
+                  "type": "text",
+                  "content": "References",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 85, 540, 120],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 85, 540, 120],
+              "spans": [
+                {
+                  "bbox": [72, 85, 540, 120],
+                  "type": "text",
+                  "content": "[1] Karpukhin, V., Oguz, B., Min, S., Lewis, P., Wu, L., Edunov, S., Chen, D., and Yih, W. (2020). Dense passage retrieval for open-domain question answering. EMNLP.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 130, 540, 165],
+          "angle": 0,
+          "index": 2,
+          "lines": [
+            {
+              "bbox": [72, 130, 540, 165],
+              "spans": [
+                {
+                  "bbox": [72, 130, 540, 165],
+                  "type": "text",
+                  "content": "[2] Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler, H., Lewis, M., Yih, W., Rocktaschel, T., Riedel, S., and Kiela, D. (2020). Retrieval-augmented generation for knowledge-intensive NLP tasks. NeurIPS.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 175, 540, 210],
+          "angle": 0,
+          "index": 3,
+          "lines": [
+            {
+              "bbox": [72, 175, 540, 210],
+              "spans": [
+                {
+                  "bbox": [72, 175, 540, 210],
+                  "type": "text",
+                  "content": "[3] Izacard, G. and Grave, E. (2021). Leveraging passage retrieval with generative models for open domain question answering. EACL.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 220, 540, 255],
+          "angle": 0,
+          "index": 4,
+          "lines": [
+            {
+              "bbox": [72, 220, 540, 255],
+              "spans": [
+                {
+                  "bbox": [72, 220, 540, 255],
+                  "type": "text",
+                  "content": "[4] Kwiatkowski, T., Palomaki, J., Redfield, O., Collins, M., Parikh, A., Alberti, C., Epstein, D., Polosukhin, I., Devlin, J., Lee, K., et al. (2019). Natural questions: A benchmark for question answering research. TACL.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "ref_text",
+          "bbox": [72, 265, 540, 300],
+          "angle": 0,
+          "index": 5,
+          "lines": [
+            {
+              "bbox": [72, 265, 540, 300],
+              "spans": [
+                {
+                  "bbox": [72, 265, 540, 300],
+                  "type": "text",
+                  "content": "[5] Joshi, M., Choi, E., Weld, D., and Zettlemoyer, L. (2017). TriviaQA: A reading comprehension dataset containing Wikipedia and web search queries. ACL.",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 6,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 380, 70],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 380, 70],
+              "spans": [
+                {
+                  "bbox": [72, 50, 380, 70],
+                  "type": "text",
+                  "content": "Appendix A Additional Experiments",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 85, 540, 180],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 85, 540, 180],
+              "spans": [
+                {
+                  "bbox": [72, 85, 540, 180],
+                  "type": "text",
+                  "content": "This appendix provides additional experimental results and ablation studies that complement the main paper. We explore sensitivity of the model to hyperparameter choices and provide full result tables for all evaluation benchmarks.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    },
+    {
+      "page_idx": 7,
+      "page_size": [612, 792],
+      "preproc_blocks": [
+        {
+          "type": "title",
+          "bbox": [72, 50, 420, 70],
+          "angle": 0,
+          "index": 0,
+          "level": 2,
+          "lines": [
+            {
+              "bbox": [72, 50, 420, 70],
+              "spans": [
+                {
+                  "bbox": [72, 50, 420, 70],
+                  "type": "text",
+                  "content": "A.1 Ablation Study",
+                  "score": 1.0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 85, 540, 180],
+          "angle": 0,
+          "index": 1,
+          "lines": [
+            {
+              "bbox": [72, 85, 540, 180],
+              "spans": [
+                {
+                  "bbox": [72, 85, 540, 180],
+                  "type": "text",
+                  "content": "We conduct ablation experiments to understand the contribution of each component. Removing the complexity classifier reduces NQ EM by 3.2 points, while disabling adaptive granularity reduces performance by 5.1 points on average.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [72, 200, 540, 290],
+          "angle": 0,
+          "index": 2,
+          "lines": [
+            {
+              "bbox": [72, 200, 540, 290],
+              "spans": [
+                {
+                  "bbox": [72, 200, 540, 290],
+                  "type": "text",
+                  "content": "The full ablation results are summarized in Table A1. Each row represents removing one component from the full AdaptRAG system, demonstrating the importance of each design decision.",
+                  "score": 0.97
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "discarded_blocks": [],
+      "para_blocks": []
+    }
+  ]
+}
