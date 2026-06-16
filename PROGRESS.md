@@ -6,7 +6,7 @@
 > 指令一律 `uv run` / `uv add`。後端 import root = `app`（在 `src/app/`）。
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 
-最後更新：2026-06-16 17:30 ｜ 當前 Phase：_Phase 1 完成，準備進入 Phase 2_ ｜ 累計 Goal Score：_前置（Parsing PoC PASS）_
+最後更新：2026-06-16 ｜ 當前 Phase：_Phase 3 完成（Chat/Session/Document CRUD + 隔離測試集）_ ｜ 累計 Goal Score：_Parsing PoC PASS + Backend skeleton + Isolation 基礎_
 
 ---
 
@@ -16,8 +16,8 @@
 |---|---|---|---|---|---|
 | 0 | Bootstrap（最小化） | ✅ | ✅ | — | `import app` / ruff / mineru CLI 全綠 |
 | 1 | **MinerU Parsing PoC ★** | ✅ | ✅ | (Parsing 前置 PASS) | hybrid-http-client → vLLM @ 8001 直連成功；公式可靠 |
-| 2 | Foundation | ⬜ | — | Backend /10 | |
-| 3 | Chat/Session/Document | ⬜ | — | (Isolation 起步) | |
+| 2 | Foundation | ✅ | ✅ | Backend /10 | config/ORM/migration/providers/compose 全綠；`uv run alembic upgrade head` 成功 |
+| 3 | Chat/Session/Document | ✅ | ✅（隔離 mandatory） | Isolation /15 起步 | 175 tests 全綠；4 層隔離測試集涵蓋情境 (a)–(n) |
 | 4 | Document Parsing Pipeline（MinerU 整合） | ⬜ | — | Parsing /15 | mandatory |
 | 5 | Enrichment | ⬜ | — | — | |
 | 6 | Vespa Retrieval | ⬜ | — | Retrieval /20 | mandatory |
@@ -45,17 +45,17 @@
 - ✅ 1.3 schema 對照：`deploy/mineru/output-schema.md`（content_list / middle / model.json + ParsedBlock 欄位映射）
 
 ### Phase 2 — Foundation
-- ⬜ 2.1 Config 載入（含 MINERU_SERVER_URL） | general/sonnet
-- ⬜ 2.2 ORM + domain models | general/sonnet
-- ⬜ 2.3 Alembic 初始 migration | general/sonnet
-- ⬜ 2.4 Provider 抽象 + mock | general/sonnet
-- ⬜ 2.5 Docker Compose（deploy/） | general/sonnet
+- ✅ 2.1 Config 載入（pydantic-settings + SecretStr masking + lru_cache） | general/sonnet ｜ `src/app/config.py` + `tests/unit/test_config.py`（12 綠）
+- ✅ 2.2 ORM + domain models（SQLAlchemy 2.x typed + Pydantic v2，10 張表 + chat_id indexes + cascade） | general/sonnet ｜ `src/app/models/` + `src/app/db.py` + `tests/unit/test_models.py`（9 綠）
+- ✅ 2.3 Alembic 初始 migration（autogenerate；upgrade/downgrade round-trip 成功） | general/sonnet ｜ `migrations/versions/b5b02bc9d209_initial_schema.py`、`alembic.ini`、`migrations/env.py`
+- ✅ 2.4 Provider 抽象 + mock（OpenAI / OpenAI-compat / Gemini Native / vLLM 同走 OpenAI-compat + deterministic mock + Fernet 加密） | general/sonnet ｜ `src/app/providers/` + `src/app/security.py` + `tests/unit/test_providers.py`（49 綠）
+- ✅ 2.5 Docker Compose（postgres:16-alpine + vespa:8，含 healthcheck + named volume） | general/sonnet ｜ `deploy/docker-compose.yml` + `deploy/postgres/init.sql` + `deploy/vespa/README.md`
 
 ### Phase 3 — Chat/Session/Document
-- ⬜ 3.1 Chat service + API | general/sonnet
-- ⬜ 3.2 Session service + API | general/sonnet
-- ⬜ 3.3 Document service + 上傳 + 儲存（data/storage） | general/sonnet
-- ⬜ 3.4 隔離測試套件 | general/sonnet
+- ✅ 3.1 Chat service + API（CRUD、`updated_at` 由 Python 設 naive UTC 避免 transaction 內 `func.now()` tie） | general/sonnet ｜ `src/app/services/chat_service.py` + `src/app/api/chats.py`
+- ✅ 3.2 Session service + API（Session 屬 Chat；cross-chat 一律 404） | general/sonnet ｜ `src/app/services/session_service.py` + `src/app/api/sessions.py`
+- ✅ 3.3 Document service + upload（local FS storage + ChatDocument association + VespaIndexer Protocol + 跨 chat 共用刪除半順序） | general/sonnet ｜ `src/app/services/document_service.py` + `src/app/storage/local.py` + `src/app/api/documents.py`
+- ✅ 3.4 隔離測試套件（情境 (a)–(n)，4 層全覆蓋：DB / Vespa spy / API scope / service filter） | general/sonnet ｜ `tests/integration/test_isolation_*.py` + `tests/unit/test_isolation_service_filters.py` + `tests/_helpers.py`
 
 ### Phase 4 — Document Parsing Pipeline（MinerU 整合）
 - ⬜ 4.1 MinerU client 封裝（async/idempotent，落 data/parsed） | general/sonnet
@@ -102,13 +102,13 @@
 
 | Gate | 狀態 | 證據(測試/報告路徑) |
 |---|---|---|
-| Chat isolation | ⬜ | |
-| Session isolation | ⬜ | |
+| Chat isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_chat_documents.py` + `test_isolation_chat_sessions.py` + `test_isolation_api_scope.py`；Phase 6 接 Vespa 後再驗 retrieval-side filter |
+| Session isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_session_history_service.py` + `tests/unit/test_isolation_service_filters.py`；Phase 7 接 message API 後再驗 endpoint scope |
 | Vespa hybrid retrieval | ⬜ | |
 | Citations | ⬜ | |
 | arXiv parsing (MinerU) | 🟡 PoC PASS | `artifacts/evaluation/mineru-poc.md`（單樣本通過；Phase 4 整合後正式 mark ✅） |
 | LangGraph QA | ⬜ | |
-| Provider settings | ⬜ | |
+| Provider settings | 🟡 抽象 + mock 完成 | `src/app/providers/` + `tests/unit/test_providers.py` 49 綠 |
 
 ---
 
@@ -146,6 +146,12 @@
 - 2026-06-16｜MinerU output 瘦身：post-processor 跑完後**只留 `*.md` / `*_middle.json` / `images/`**，其餘中介檔（`*_content_list*.json`、`*_model.json`、`*_layout.pdf`、`*_origin.pdf`）刪除｜使用者要求；middle.json 已含完整結構，content_list 可從中推導，模型/layout 視覺化僅 debug 用｜CLAUDE.md §6.3-6.4、`deploy/mineru/output-schema.md`、`scripts/mineru_poc.py`
 - 2026-06-16｜MinerU images 重新命名為 `{filename}_p{page1-indexed}_{short_hash8}.{ext}`，並同步更新 middle.json `image_path` 與 markdown 連結｜使用者要求 + 提升可讀性與診斷｜`scripts/mineru_poc.py`
 - 2026-06-16｜MinerU markdown 在每頁外加 `<Page N>...</Page N>` 字面標記（非合法 HTML，CommonMark 視為純文字，因此不干擾 `#`/`##` 標題與內文）｜使用者要求 + 作為 citation page anchor｜`scripts/mineru_poc.py`、`deploy/mineru/output-schema.md`
+- 2026-06-16｜Phase 2.4 Provider 抽象：Gemini Native（`gemini_native.py`）完整實作 `GeminiNativeChatProvider` / `GeminiNativeEmbeddingProvider`，使用 `google-genai` SDK，`contents` 與 `embed_content` 型別需 `# type: ignore[arg-type]` suppression（google-genai 泛型型別標注過於嚴格）；三個 type: ignore 均已記錄。所有單元測試以 MockProvider 取代真實 API 呼叫，無需實際 key｜`src/app/providers/gemini_native.py`
+- 2026-06-16｜Phase 2.4 Key security：`src/app/security.py` 提供 Fernet 加解密（`encrypt`/`decrypt`）+ `mask_secret`；所有 adapter log 一律先 mask；`APP_ENCRYPTION_KEY` 若非標準 32-byte base64 則自動 SHA-256 派生，對測試環境友善｜`src/app/security.py`
+- 2026-06-16｜Phase 2.2 ORM timestamps 改為 naive UTC（`TIMESTAMP WITHOUT TIME ZONE`），偏離 CLAUDE.md §5.1 「datetime w/ TZ」原意｜autogenerate 預設值 + asyncpg 對 mixed naive/aware 嚴格；先以 naive UTC 一致化避免 INSERT 失敗｜未來若要恢復 TZ-aware，需額外 migration + service 端統一去 tzinfo 的 helper 改寫；`src/app/services/chat_service.py`、Phase 2.2 ORM
+- 2026-06-16｜Phase 3.1 chat ordering tiebreak：因同一 transaction 內 `func.now()` 對多筆 INSERT 給同一 timestamp，`list_chats` 的 `ORDER BY updated_at DESC` 在測試環境無法區分；改由 service 端 Python 設 `datetime.now(UTC).replace(tzinfo=None)`，每次呼叫產生不同 µs 值｜`src/app/services/chat_service.py::create_chat / update_chat`
+- 2026-06-16｜Phase 3.3 Vespa 解耦：定義 `VespaIndexer` Protocol + `NullVespaIndexer` no-op；`document_service.delete_document` 透過 DI 注入，Phase 6 將以真實 Vespa client 替換。Spy 隔離測試 (m) 確認 caller 的 `chat_id` 必被傳遞給 indexer.delete｜`src/app/services/vespa_indexer.py`
+- 2026-06-16｜Phase 3.3 跨 chat 文件共用：以 `chat_documents` association table 為 single source of truth（連 owner chat 自身也建一筆）；刪除為「先解除本 chat association，無人共用才真刪 ORM/storage/indexer」半順序語意｜`src/app/services/document_service.py`
 
 ---
 
@@ -165,11 +171,13 @@
 |---|---|---|---|
 | import 健檢 | `uv run python -c "import app"` | ✅ | 2026-06-16 |
 | MinerU PoC | `uv run mineru -p data/2410.05779v3.pdf -o data/parsed -b hybrid-http-client -u http://localhost:8001` | ✅ | gate_pass=true；`scripts/mineru_poc.py` 可重跑 |
-| lint | `uv run ruff check .` | ✅ | 全綠 |
-| 型別 | `uv run mypy src/app` | ⬜ | |
-| 單元測試 | `uv run pytest tests/unit` | ⬜ | |
-| 整合測試 | `uv run pytest tests/integration` | ⬜ | |
-| 評估測試 | `uv run pytest tests/evaluation` | ⬜ | |
-| compose 設定 | `docker compose -f deploy/docker-compose.yml config` | ⬜ | |
-| 依賴啟動 | `docker compose -f deploy/docker-compose.yml up -d postgres vespa` | ⬜ | |
-| 前端 build | `npm --prefix src/frontend run build` | ⬜ | |
+| lint | `uv run ruff check src/app tests migrations` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
+| 型別 | `uv run mypy src/app` | ✅ | 2026-06-16 — 27 source files, 0 issues |
+| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-16 — config 12 + models 9 + providers 49 + chat_service 13 + session_service 14 + document_service 11 + isolation_service_filters 10 = 118 綠 |
+| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-16 — chats_api + sessions_api + documents_api + 4 個 isolation_* 共 57 綠 |
+| Alembic upgrade | `uv run alembic upgrade head` | ✅ | 2026-06-16 — revision `b5b02bc9d209`；11 張表（10 + alembic_version）建立 |
+| Alembic round-trip | `uv run alembic downgrade base && uv run alembic upgrade head` | ✅ | 2026-06-16 — 雙向可重跑 |
+| 評估測試 | `uv run pytest tests/evaluation` | ⬜ | Phase 9 |
+| compose 設定 | `docker compose -f deploy/docker-compose.yml config` | ✅ | 2026-06-16 — YAML 合法 |
+| 依賴啟動 | `docker compose -f deploy/docker-compose.yml up -d postgres vespa` | 🟡 部分 | 2026-06-16 — local 5432 已被 `postgres-local` container 占用；改用既有容器並建立 `paper_notebook` DB（功能等效）；vespa 尚未起 |
+| 前端 build | `npm --prefix src/frontend run build` | ⬜ | Phase 8 |

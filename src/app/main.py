@@ -1,0 +1,140 @@
+"""FastAPI application entrypoint.
+
+This module creates the ``app`` instance and wires together:
+- Routers (thin HTTP layer; no domain logic)
+- Exception handlers mapping domain errors → HTTP status codes
+- Lifespan hook (currently a no-op placeholder)
+
+Phase progression
+-----------------
+Phase 3.1 added the ``/chats`` router.
+Phase 3.2 added the ``/chats/{chat_id}/sessions`` router.
+Phase 3.3 adds the ``/chats/{chat_id}/documents`` router.
+Later phases (3.4+) will add messages, agent QA, etc.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from app.errors import (
+    ChatDocumentAlreadyAssociated,
+    ChatNotFound,
+    DocumentAlreadyExists,
+    DocumentNotFound,
+    DocumentStorageError,
+    InvalidUpload,
+    SessionNotFound,
+)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan hook — placeholder for startup/shutdown tasks."""
+    # Phase 6+ will initialise the Vespa connection pool here.
+    yield
+
+
+app = FastAPI(
+    title="Paper Notebook Agent",
+    version="0.1.0",
+    description="NotebookLM-like multi-document Agentic QA over arXiv PDFs.",
+    lifespan=lifespan,
+)
+
+
+# ---------------------------------------------------------------------------
+# Exception handlers
+# ---------------------------------------------------------------------------
+
+
+@app.exception_handler(ChatNotFound)
+async def chat_not_found_handler(request: Request, exc: ChatNotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": "chat not found"})
+
+
+@app.exception_handler(SessionNotFound)
+async def session_not_found_handler(
+    request: Request, exc: SessionNotFound
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(DocumentNotFound)
+async def document_not_found_handler(
+    request: Request, exc: DocumentNotFound
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidUpload)
+async def invalid_upload_handler(request: Request, exc: InvalidUpload) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(DocumentAlreadyExists)
+async def document_already_exists_handler(
+    request: Request, exc: DocumentAlreadyExists
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": str(exc),
+            "document_id": str(exc.document_id),
+        },
+    )
+
+
+@app.exception_handler(ChatDocumentAlreadyAssociated)
+async def chat_document_already_associated_handler(
+    request: Request, exc: ChatDocumentAlreadyAssociated
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": str(exc),
+            "document_id": str(exc.document_id),
+        },
+    )
+
+
+@app.exception_handler(DocumentStorageError)
+async def document_storage_error_handler(
+    request: Request, exc: DocumentStorageError
+) -> JSONResponse:
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Routers
+# ---------------------------------------------------------------------------
+
+from app.api import chats  # noqa: E402,I001
+from app.api import documents  # noqa: E402,I001
+from app.api import sessions  # noqa: E402,I001
+
+app.include_router(chats.router, prefix="/chats", tags=["chats"])
+app.include_router(
+    sessions.router,
+    prefix="/chats/{chat_id}/sessions",
+    tags=["sessions"],
+)
+app.include_router(
+    documents.router,
+    prefix="/chats/{chat_id}/documents",
+    tags=["documents"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health", tags=["meta"])
+async def health() -> dict[str, str]:
+    return {"status": "ok"}

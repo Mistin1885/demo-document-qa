@@ -29,8 +29,6 @@ output/
 # Local-only conveniences (regenerable; not required to bootstrap the repo)
 Makefile
 artifacts/
-migrations/
-tests/
 
 # Local env files (only .env.example is committed)
 .env
