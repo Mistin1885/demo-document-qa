@@ -165,18 +165,50 @@ uv run mineru -p <input_pdf> -o <output_dir> -b hybrid-http-client -u http://loc
 - The server URL is **configurable** via `app.config` (`MINERU_SERVER_URL`, default `http://localhost:8001`) and surfaced as a provider-style setting. Never hard-code it in business logic.
 - **Open verification (resolve in Phase 1):** confirm the raw vLLM endpoint at `:8001` is compatible with MinerU's `hybrid-http-client` `-u` expectation; if it expects a `mineru-openai-server` wrapper, document the exact server launch in `deploy/mineru/` and adjust the URL/port. Record findings in `PROGRESS.md`.
 
-### 6.3 MinerU outputs we consume
-For each PDF, MinerU writes to `data/parsed/<doc>/`:
-- `*.md` — markdown (human-readable, sanity check)
-- `<name>_content_list.json` (and `_v2`) — ordered content blocks: `type`, `text`, `page_idx`, `bbox`, list/table/formula markers → primary source for ordered blocks
-- `<name>_middle.json` — structured intermediate: per-page `pdf_info`, `_backend`, `_version_name`; hierarchical `block → line → span` with `bbox`, page size, discarded blocks → primary source for layout/bbox/structure
-- `<name>_model.json` — raw VLM output incl. title levels (used for hierarchy levels)
-- `layout.pdf`, `span.pdf` — debug visualizations only
+### 6.3 MinerU outputs we consume (post-processed)
+
+`scripts/mineru_poc.py` runs MinerU then immediately post-processes the per-doc
+output directory so that **only three things survive** (everything else is
+deleted to keep `data/parsed/` lean and the schema predictable):
+
+- `<name>.md` — markdown, **rebuilt from `content_list.json`** with two changes:
+  - every PDF page wrapped in `<Page N>...</Page N>` markers (literal text;
+    not valid HTML — markdown renderers pass it through as plain text, so it
+    does not collide with `#`/`##` heading parsing).
+  - every `images/...` link rewritten to the renamed basename.
+- `<name>_middle.json` — **primary structural source** (per-page `pdf_info`
+  with `preproc_blocks` / `para_blocks` / `discarded_blocks`, bbox in PDF-point
+  space, `page_size`, `_backend`, `_version_name`). All `image_path` values
+  are rewritten to renamed basenames so the references match the files on
+  disk.
+- `images/<doc>_p<page>_<short_hash>.<ext>` — figure / table / formula crops,
+  renamed deterministically (`<short_hash>` = first 8 chars of the original
+  sha256-derived stem, `<page>` is 1-indexed).
+
+Intermediate files (`<name>_content_list.json`, `<name>_content_list_v2.json`,
+`<name>_model.json`, `<name>_layout.pdf`, `<name>_origin.pdf`) are deleted by
+the post-processor. The PoC and Phase 4 mapping must read from
+`<name>_middle.json` (structure) + `<name>.md` (rendered text) only.
 
 ### 6.4 Mapping into our model (`src/app/parsing/`)
-- `mapping.py`: `content_list.json` + `middle.json` → `ParsedBlock` (GUIDE §7.3 fields: `block_id, chat_id, document_id, page_number, block_type, text, bbox, reading_order, font_size?, font_name?, column_index?, confidence`). MinerU provides reading order, page, bbox; map its block types into our `block_type` enum.
-- `hierarchy.py`: derive title/authors/abstract/headings/subsections/references-boundary/appendix + tables/figure captions from MinerU title levels (`model.json`) + heuristics. **Preserve original layout metadata; do not let one piece of content land in multiple sections; keep heuristic vs LLM refinements traceable** (GUIDE §24).
-- PyMuPDF/pdfplumber are **optional** cross-checks (e.g., verify page count / bbox) and a degraded fallback if the MinerU server is unavailable.
+- `mapping.py`: walk `middle.json:pdf_info[].preproc_blocks` in order →
+  `ParsedBlock` (GUIDE §7.3 fields: `block_id, chat_id, document_id,
+  page_number, block_type, text, bbox, reading_order, font_size?, font_name?,
+  column_index?, confidence`). `text` for `text`/`title`/`ref_text` blocks
+  comes from joining each block's `lines[].spans[].content`;
+  `interline_equation` blocks carry the LaTeX in their span; `image`/`table`
+  blocks reference the renamed `images/...` basename and the caption sits in
+  a sibling `image_caption`/`table_caption` nested block.
+- `hierarchy.py`: derive title/authors/abstract/headings/subsections/
+  references-boundary/appendix + tables/figure captions from MinerU title
+  `level` (`1` = doc title, `2` = section/subsection heading) plus
+  proximity-to-image/table heuristics. **Preserve original layout metadata;
+  do not let one piece of content land in multiple sections; keep heuristic
+  vs LLM refinements traceable** (GUIDE §24).
+- `<Page N>...</Page N>` markers in the markdown give a deterministic anchor
+  for page-bounded retrieval excerpts (citations carry `page_start`/`page_end`).
+- PyMuPDF/pdfplumber are **optional** cross-checks (e.g., verify page count
+  / bbox) and a degraded fallback if the MinerU server is unavailable.
 
 ### 6.5 Retrieval routing (do NOT make everything top-k)
 - **Structural / deterministic fetch (PostgreSQL):** whole-doc / whole-chat / specific-section summaries, anything requiring every document be covered → fetch-all; **never replace with top-k**.

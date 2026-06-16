@@ -9,8 +9,30 @@ wheels/
 # Virtual environments
 .venv
 
-# Data
-data/
+# Reference (read-only)
+ref/
 
-# Output
+# Data artifacts (large / generated)
+data/sample/
+data/storage/
+data/parsed/
+
+# Keep small committed fixtures
+!data/fixtures/
+
+# Output / scratch
 output/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Local-only conveniences (regenerable; not required to bootstrap the repo)
+Makefile
+artifacts/
+migrations/
+tests/
+
+# Local env files (only .env.example is committed)
+.env
+.env.*
+!.env.example
