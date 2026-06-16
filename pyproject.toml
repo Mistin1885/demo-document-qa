@@ -1,0 +1,9 @@
+[project]
+name = "demo-document-qa"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mineru[all]>=3.3.1",
+]
