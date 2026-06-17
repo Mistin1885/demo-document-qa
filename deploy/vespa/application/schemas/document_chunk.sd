@@ -1,0 +1,280 @@
+schema document_chunk {
+    document document_chunk {
+        field vespa_document_id type string {
+            indexing: attribute | summary
+            attribute {
+                fast-search
+            }
+        }
+        field chat_id type string {
+            indexing: attribute | summary
+            attribute {
+                fast-search
+            }
+        }
+        field document_id type string {
+            indexing: attribute | summary
+            attribute {
+                fast-search
+            }
+        }
+        field source_node_id type string {
+            indexing: attribute | summary
+        }
+        field parent_node_id type string {
+            indexing: attribute | summary
+        }
+        field source_type type string {
+            indexing: attribute | summary
+            attribute {
+                fast-search
+            }
+        }
+        field title type string {
+            indexing: index | summary
+            index: enable-bm25
+        }
+        field heading_path type string {
+            indexing: index | summary
+            index: enable-bm25
+        }
+        field content type string {
+            indexing: index | summary
+            index: enable-bm25
+        }
+        field keywords type array<string> {
+            indexing: attribute | index | summary
+            index: enable-bm25
+        }
+        field technical_keywords type array<string> {
+            indexing: attribute | index | summary
+            index: enable-bm25
+        }
+        field entities type array<string> {
+            indexing: attribute | index | summary
+            index: enable-bm25
+        }
+        field page_start type int {
+            indexing: attribute | summary
+        }
+        field page_end type int {
+            indexing: attribute | summary
+        }
+        field order_index type int {
+            indexing: attribute | summary
+        }
+        field token_count type int {
+            indexing: attribute | summary
+        }
+        field embedding type tensor<float>(x[1024]) {
+            indexing: attribute | index
+            attribute {
+                distance-metric: angular
+            }
+            index {
+                hnsw {
+                    max-links-per-node: 16
+                    neighbors-to-explore-at-insert: 200
+                }
+            }
+        }
+        field created_at type long {
+            indexing: attribute | summary
+        }
+    }
+    fieldset default {
+        fields: content, title, heading_path, keywords, technical_keywords, entities
+    }
+    rank-profile bm25_only {
+        function bm25_weighted() {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        function semantic_score() {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        first-phase {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        summary-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+        match-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+    }
+    rank-profile semantic_only {
+        function bm25_weighted() {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        function semantic_score() {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        first-phase {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        summary-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+        match-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+    }
+    rank-profile hybrid_first_phase {
+        function bm25_weighted() {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        function semantic_score() {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        function source_type_boost() {
+            expression {
+                if(attribute(source_type) == "document_overview", 2.0, if(attribute(source_type) == "compact_document_overview", 1.6, if(attribute(source_type) == "section_summary", 1.8, if(attribute(source_type) == "compact_section_summary", 1.5, if(attribute(source_type) == "chapter_summary", 1.6, if(attribute(source_type) == "compact_chapter_summary", 1.3, if(attribute(source_type) == "technology_card", 1.4, if(attribute(source_type) == "performance_fact", 1.3, if(attribute(source_type) == "claim", 1.2, if(attribute(source_type) == "definition", 1.2, if(attribute(source_type) == "table_record", 1.1, if(attribute(source_type) == "figure_caption", 1.0, if(attribute(source_type) == "chunk", 1.0, if(attribute(source_type) == "raw_block", 0.9, 1.0))))))))))))))
+            }
+        }
+        function heading_match_boost() {
+            expression {
+                0.3 * bm25(title) + 0.2 * bm25(heading_path)
+            }
+        }
+        first-phase {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
+            }
+        }
+        second-phase {
+            expression {
+                firstPhase + 0.5 * heading_match_boost + firstPhase * (source_type_boost - 1.0)
+            }
+            rerank-count: 200
+        }
+        summary-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+        match-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+    }
+    rank-profile hybrid_with_native_rerank inherits hybrid_first_phase {
+        function bm25_weighted() {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        function semantic_score() {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        function source_type_boost() {
+            expression {
+                if(attribute(source_type) == "document_overview", 2.0, if(attribute(source_type) == "compact_document_overview", 1.6, if(attribute(source_type) == "section_summary", 1.8, if(attribute(source_type) == "compact_section_summary", 1.5, if(attribute(source_type) == "chapter_summary", 1.6, if(attribute(source_type) == "compact_chapter_summary", 1.3, if(attribute(source_type) == "technology_card", 1.4, if(attribute(source_type) == "performance_fact", 1.3, if(attribute(source_type) == "claim", 1.2, if(attribute(source_type) == "definition", 1.2, if(attribute(source_type) == "table_record", 1.1, if(attribute(source_type) == "figure_caption", 1.0, if(attribute(source_type) == "chunk", 1.0, if(attribute(source_type) == "raw_block", 0.9, 1.0))))))))))))))
+            }
+        }
+        function heading_match_boost() {
+            expression {
+                0.3 * bm25(title) + 0.2 * bm25(heading_path)
+            }
+        }
+        second-phase {
+            expression {
+                firstPhase * source_type_boost + 0.5 * heading_match_boost
+            }
+            rerank-count: 200
+        }
+        summary-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+        match-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+    }
+    rank-profile hybrid_for_cross_encoder {
+        function bm25_weighted() {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+            }
+        }
+        function semantic_score() {
+            expression {
+                closeness(field, embedding)
+            }
+        }
+        first-phase {
+            expression {
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
+            }
+        }
+        summary-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+        match-features {
+            bm25(content)
+            bm25(title)
+            bm25(heading_path)
+            bm25(keywords)
+            bm25(technical_keywords)
+            closeness(field, embedding)
+        }
+    }
+}

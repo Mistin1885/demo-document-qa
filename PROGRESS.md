@@ -6,7 +6,7 @@
 > 指令一律 `uv run` / `uv add`。後端 import root = `app`（在 `src/app/`）。
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 
-最後更新：2026-06-17 ｜ 當前 Phase：_Phase 5 完成（section / document / structured-facts / chat manifest enrichment，全 mock-LLM idempotent）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment 全綠_
+最後更新：2026-06-18 ｜ 當前 Phase：_Phase 6 完成（Vespa application + feed/delete + RetrievalService RRF/rerank + eval harness，651 tests 全綠）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 6 Vespa Retrieval /20 mandatory PASS_
 
 ---
 
@@ -20,7 +20,7 @@
 | 3 | Chat/Session/Document | ✅ | ✅（隔離 mandatory） | Isolation /15 起步 | 175 tests 全綠；4 層隔離測試集涵蓋情境 (a)–(n) |
 | 4 | Document Parsing Pipeline（MinerU 整合） | ✅ | ✅ mandatory | Parsing /15 | 312 tests 全綠；client / mapping / hierarchy / eval harness 齊備；LightRAG real-data PASS |
 | 5 | Enrichment | ✅ | ✅ | — | section / document / facts / manifest 完成；295 unit + 95 integration/eval 全綠；全 mock-LLM idempotent |
-| 6 | Vespa Retrieval | ⬜ | — | Retrieval /20 | mandatory |
+| 6 | Vespa Retrieval | ✅ | ✅ mandatory | Retrieval /20 | 651 tests 全綠；app package/feed/RetrievalService(RRF+rerank)/eval harness 齊備；leakage=0 |
 | 7 | LangGraph Agent | ⬜ | — | Agent QA /20 | mandatory |
 | 8 | Frontend | ⬜ | — | Frontend /10 | |
 | 9 | Evaluation & Repair | ⬜ | — | Provider /10 + Isolation /15 | |
@@ -70,11 +70,11 @@
 - ✅ 5.4 Chat-level manifest（read-time 聚合 documents/titles/authors(從 hierarchy authors node)/abstract_summary/main_topics/section_count/token_estimate/source_types/ingestion_status；Chat A↔B isolation 斷言；無 raw SQL 靜態驗證） | general/sonnet + 主控補 authors fetch ｜ `src/app/enrichment/manifest.py` + `tests/unit/test_enrichment_manifest.py`（13 綠）
 
 ### Phase 6 — Vespa
-- ⬜ 6.1 Application package + deploy（deploy/vespa） | general/sonnet
-- ⬜ 6.2 Feed/Delete service | general/sonnet
-- ⬜ 6.3 Rank profiles | general/sonnet
-- ⬜ 6.4 RetrievalService（RRF + rerank） | general/sonnet
-- ⬜ 6.5 Retrieval eval harness | general/sonnet
+- ✅ 6.1 Application package + deploy（deploy/vespa） | general/sonnet ｜ `src/app/vespa/app_package.py` + `scripts/deploy_vespa.py` + `deploy/vespa/application/{services.xml,hosts.xml,validation-overrides.xml,schemas/document_chunk.sd}`；25 unit tests 全綠；`--dry-run` 驗收通過；pyvespa 1.2.1
+- ✅ 6.2 Feed/Delete service（async httpx + deterministic uuid5 vespa_document_id + selection-based DELETE + 維度驗證；encoders 對應 14 種 source_type；`feed_document` 端到端 helper：先 delete → encode → batch embed → 維度 check → feed） | general/sonnet ｜ `src/app/vespa/{feed,encoders}.py` + `src/app/services/ingestion_service.py` + `src/app/errors.py::VespaDimensionMismatch` + `src/app/api/documents.py`（prod 切到 VespaFeedClient）+ 3 個測試檔（74 綠）
+- ✅ 6.3 Rank profiles | general/sonnet ｜ 5 個 rank profiles（bm25_only / semantic_only / hybrid_first_phase / hybrid_with_native_rerank / hybrid_for_cross_encoder）；source_type_boost 14 種；match_features + summary_features 全暴露；嵌入 6.1 完成
+- ✅ 6.4 RetrievalService（單一 Vespa 查詢入口；`_yql_where` 強制注入 `chat_id contains`；UUID + source_type whitelist + injection 三重驗證；BM25-only / vector-only / hybrid 三模式；RRF fusion；rerank_mode {none/native/cross_encoder}；SearchHit 帶各階段分數；query 用 userQuery() 不拼進 YQL） | general/sonnet ｜ `src/app/retrieval/{__init__,models,rrf,service}.py` + `src/app/errors.py::{InvalidRetrievalFilter,RerankerUnavailable,RetrievalError}` + 4 個測試檔（80 綠，含 6 個跨 chat 隔離 integration）
+- ✅ 6.5 Retrieval eval harness（Recall@k / MRR / nDCG@k / cross-chat leakage；EvalReport typed Pydantic；FakeVespa transport deterministic；5 mode 比較；mandatory gate：leakage=0 ＆ hybrid≥單一 retriever ＆ rerank 不退步；exit code 反映 gate） | general/sonnet ｜ `src/app/evaluation/retrieval_eval.py` + `scripts/run_retrieval_eval.py` + `data/fixtures/retrieval/{corpus,eval_cases}.json` + `tests/evaluation/test_retrieval_eval.py`（49 綠）；最終報告 `artifacts/evaluation/retrieval-report.{json,md}` 全 mode recall@10=1.0 / leakage=0 / gate PASS
 
 ### Phase 7 — LangGraph Agent
 - ⬜ 7.1 AgentState + ContextBudget | general/sonnet
@@ -164,7 +164,10 @@
 - 2026-06-17｜Phase 5.1-5.2 enrichment 全程 **mock-LLM safe**：`MockChatProvider` 只回 hash 字串，因此 enrichment pipeline 設計成「呼叫 provider 是 hook + deterministic post-processing 抽欄位」，未來換真 LLM 只要替換 prompt + response parser，不必重寫測試｜`src/app/enrichment/{section,document}.py`
 - 2026-06-17｜Phase 5.1-5.2 不擴 `SummaryKind` enum：claims/definitions/methods/limitations/performance_facts/main_* 等細項全留在 Pydantic `SectionEnrichment` / `DocumentEnrichment` 物件中，由 Phase 6 灌入 Vespa 對應 `source_type`；PostgreSQL 只落兩種粒度的 Summary 列（`section_detailed`/`section_compact` + `document_overview`/`chapter_summary(abstract)`）｜`src/app/enrichment/models.py`
 - 2026-06-17｜Phase 5.3 `FactsFilter` 為 LangGraph `query_structured_facts` 工具的契約面：`ConfigDict(extra="forbid")` + 全欄位上下界；service `query_facts` 內部以 `filt.model_copy(update={"chat_id": current_chat_id})` 強制覆蓋 LLM 提供的 chat_id；StructuredFact.id 全 deterministic uuid5（NAMESPACE_OID）讓重跑 idempotent｜`src/app/services/facts_service.py`、`src/app/enrichment/facts.py`
-- 2026-06-17｜Phase 5.4 ChatManifest 為 **read-time computed**（GUIDE §8.3，不在 ingestion 階段預先產生 Chat-wide summary）；authors 從 Phase 4.3 hierarchy `node_type="authors"` 節點 content 切字（`,;\n` + ` and `），`Document` ORM 不擴新欄位；`Document.title` 退路為 `node_type="document"` 的 root DocumentNode title｜`src/app/enrichment/manifest.py`
+- 2026-06-18｜Phase 6.1/6.3 Vespa schema 以 pyvespa 1.2.1 **程式化生成**（非手寫 .sd）；`build_application_package(dim)` 負責 schema，`write_application_files(dir, dim)` 負責覆寫 services.xml / hosts.xml / validation-overrides.xml（pyvespa 自動產生的這三個 XML 不符合 spec，故在 step 2 覆寫）；`scripts/deploy_vespa.py --dry-run` 作為 CI 友善驗收命令，不需要真實 Vespa｜`src/app/vespa/app_package.py`、`scripts/deploy_vespa.py`
+- 2026-06-18｜Phase 6.3 second-phase 表達限制：pyvespa `RankProfile(second_phase=SecondPhaseRanking(expression=...))` 完整支援，無需 raw text fallback；`hybrid_with_native_rerank` inherits `hybrid_first_phase` 並覆寫 second_phase，測試確認繼承關係正確寫入 .sd｜`src/app/vespa/app_package.py`
+- 2026-06-18｜Phase 6.1 services.xml container 命名：pyvespa 預設生成 `id="documentchunk_container"` / `id="documentchunk_content"`，不符合 spec（`default` / `documents`）；已在 `write_application_files` step 2 手動覆寫為正確名稱｜`src/app/vespa/app_package.py::_services_xml`
+- 2026-06-18｜Phase 5.4 ChatManifest 為 **read-time computed**（GUIDE §8.3，不在 ingestion 階段預先產生 Chat-wide summary）；authors 從 Phase 4.3 hierarchy `node_type="authors"` 節點 content 切字（`,;\n` + ` and `），`Document` ORM 不擴新欄位；`Document.title` 退路為 `node_type="document"` 的 root DocumentNode title｜`src/app/enrichment/manifest.py`
 
 ---
 
@@ -195,4 +198,6 @@
 | 評估測試 | `uv run pytest tests/evaluation` | ⬜ | Phase 9 |
 | compose 設定 | `docker compose -f deploy/docker-compose.yml config` | ✅ | 2026-06-16 — YAML 合法 |
 | 依賴啟動 | `docker compose -f deploy/docker-compose.yml up -d postgres vespa` | 🟡 部分 | 2026-06-16 — local 5432 已被 `postgres-local` container 占用；改用既有容器並建立 `paper_notebook` DB（功能等效）；vespa 尚未起 |
+| Vespa deploy dry-run | `DATABASE_URL=... APP_ENCRYPTION_KEY=... uv run python scripts/deploy_vespa.py --dry-run` | ✅ | 2026-06-18 — 6 個檔案生成；tensor<float>(x[1024]) + 5 rank profiles 全包含 |
+| unit tests（含 Phase 6.1/6.3） | `uv run pytest tests/unit` | ✅ | 2026-06-18 — 342 綠（+25 新增 test_vespa_app_package） |
 | 前端 build | `npm --prefix src/frontend run build` | ⬜ | Phase 8 |

@@ -27,12 +27,13 @@ class VespaIndexer(Protocol):
         self,
         chat_id: uuid.UUID,
         document_id: uuid.UUID,
-    ) -> None:
+    ) -> int:
         """Remove all Vespa document chunks that belong to ``document_id``
         in the context of ``chat_id``.
 
-        Must be idempotent — calling it for an already-deleted document must
-        not raise.
+        Returns the number of documents deleted (best-effort; may be 0 for
+        no-op implementations).  Must be idempotent — calling it for an
+        already-deleted document must not raise.
         """
         ...
 
@@ -48,9 +49,9 @@ class NullVespaIndexer:
         self,
         chat_id: uuid.UUID,
         document_id: uuid.UUID,
-    ) -> None:
+    ) -> int:
         """No-op: Vespa not yet available.  Phase 6 will replace this."""
-        return
+        return 0
 
 
 __all__ = ["VespaIndexer", "NullVespaIndexer"]

@@ -1,0 +1,68 @@
+{
+  "_comment": "Synthetic eval cases. All data is fabricated — no real Vespa/arXiv dependency.",
+  "cases": [
+    {
+      "query": "What is LightRAG and how does it work?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a1", "chunk-a4", "chunk-a10"],
+      "document_ids": null,
+      "notes": "General intro query; relevant chunks are intro + abstract + claim"
+    },
+    {
+      "query": "Describe the dual-level retrieval method in LightRAG",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a2"],
+      "document_ids": null,
+      "notes": "Specific method query; only chunk-a2 is relevant"
+    },
+    {
+      "query": "What are the benchmark results and performance numbers?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a3", "chunk-a8"],
+      "document_ids": null,
+      "notes": "Performance/numbers query; relevant chunks are experiments + performance_fact"
+    },
+    {
+      "query": "How does the attention mechanism work in transformers?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a5", "chunk-a9"],
+      "document_ids": null,
+      "notes": "Transformer attention query; relevant chunks from document 2"
+    },
+    {
+      "query": "What BLEU score does the transformer achieve on translation?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a6"],
+      "document_ids": null,
+      "notes": "Specific metric query; only chunk-a6 is relevant"
+    },
+    {
+      "query": "What is Retrieval-Augmented Generation?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a7", "chunk-a1"],
+      "document_ids": null,
+      "notes": "Definition query; chunk-a7 is the glossary definition, chunk-a1 also mentions RAG"
+    },
+    {
+      "query": "How does LightRAG compare to GraphRAG in memory usage?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a8", "chunk-a3"],
+      "document_ids": null,
+      "notes": "Comparison query; chunk-a8 has memory stats, chunk-a3 also mentions GraphRAG"
+    },
+    {
+      "query": "What graph-based indexing approach does LightRAG use for multi-hop reasoning?",
+      "chat_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "relevant_vespa_document_ids": ["chunk-a10", "chunk-a1", "chunk-a2"],
+      "document_ids": null,
+      "notes": "Multi-hop reasoning query; claim + intro + method are all relevant"
+    },
+    {
+      "query": "LightRAG retrieval graph knowledge",
+      "chat_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "relevant_vespa_document_ids": ["chunk-b1"],
+      "document_ids": null,
+      "notes": "CROSS-CHAT LEAKAGE TEST: query from Chat B. chat-b1 has similar keywords to chat-a chunks. FakeVespa must filter by chat_id so chunk-a* never appear."
+    }
+  ]
+}

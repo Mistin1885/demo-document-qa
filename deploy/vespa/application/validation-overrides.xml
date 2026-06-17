@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<validation-overrides>
+  <!-- Allow tensor-type changes (e.g., when embedding_dim is updated) -->
+  <allow until="2026-07-18" comment="allow embedding dim changes">tensor-type-change</allow>
+  <!-- Allow field-type changes during development -->
+  <allow until="2026-07-18" comment="allow field-type changes">field-type-change</allow>
+  <!-- Allow indexing-mode changes (e.g., attribute ↔ index) -->
+  <allow until="2026-07-18" comment="allow indexing changes">indexing-change</allow>
+</validation-overrides>

@@ -48,6 +48,8 @@ class Settings(BaseSettings):
 
     # --- Vespa ---
     vespa_endpoint: str = "http://localhost:8080"
+    vespa_enabled: bool = True
+    """Set to False to use the no-op NullVespaIndexer (useful in CI / test)."""
 
     # --- Application secrets (required — raises ValidationError if absent) ---
     app_encryption_key: str

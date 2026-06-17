@@ -14,6 +14,7 @@ dependencies = [
     "openai>=2.41.1",
     "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.1",
+    "pyvespa>=0.50",
     "six>=1.17.0",
     "sqlalchemy[asyncio]>=2.0.51",
 ]

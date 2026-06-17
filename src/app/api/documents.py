@@ -20,6 +20,7 @@ from fastapi import status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db import get_session
 from app.errors import (
     ChatDocumentAlreadyAssociated,
@@ -33,6 +34,7 @@ from app.services import document_service
 from app.services.vespa_indexer import NullVespaIndexer, VespaIndexer
 from app.storage import LocalBlobStorage
 from app.storage.local import BlobStorage
+from app.vespa.feed import VespaFeedClient
 
 router = APIRouter()
 
@@ -48,8 +50,22 @@ def get_storage() -> BlobStorage:
 
 
 def get_indexer() -> VespaIndexer:
-    """Return the no-op Vespa indexer until Phase 6 is implemented."""
-    return NullVespaIndexer()
+    """Return the appropriate Vespa indexer based on environment / settings.
+
+    - In ``test`` environments (``app_env == 'test'``) or when Vespa is
+      disabled (``vespa_enabled=False``), return the no-op ``NullVespaIndexer``
+      so unit tests never require a running Vespa instance.
+    - In all other environments, construct a ``VespaFeedClient`` from settings.
+
+    Tests can override this dependency via ``app.dependency_overrides``.
+    """
+    settings = get_settings()
+    if settings.app_env == "test" or not getattr(settings, "vespa_enabled", True):
+        return NullVespaIndexer()
+    return VespaFeedClient(
+        endpoint=settings.vespa_endpoint,
+        embedding_dim=settings.embedding_dim,
+    )
 
 
 def _not_found(detail: str) -> HTTPException:

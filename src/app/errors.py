@@ -130,6 +130,60 @@ class InvalidFactFilter(AppError):
         super().__init__(message)
 
 
+# ---------------------------------------------------------------------------
+# Vespa errors (Phase 6.2)
+# ---------------------------------------------------------------------------
+
+
+class VespaDimensionMismatch(AppError):
+    """Raised when an embedding vector's dimension does not match the Vespa schema DIM.
+
+    The feed service validates this before sending any documents to Vespa.
+    Silent dimension truncation / padding is never acceptable — CLAUDE.md §6.2.
+    """
+
+    def __init__(self, expected: int, got: int) -> None:
+        self.expected = expected
+        self.got = got
+        super().__init__(
+            f"Embedding dimension mismatch: Vespa schema expects {expected} dimensions, "
+            f"but the embedding provider returned {got}."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Retrieval errors (Phase 6.4)
+# ---------------------------------------------------------------------------
+
+
+class InvalidRetrievalFilter(AppError):
+    """Raised when a retrieval filter value fails safety validation.
+
+    This protects against YQL injection: UUID format, source_type whitelist,
+    and forbidden character checks all raise this error before any query is
+    sent to Vespa.  The LLM/agent cannot inject arbitrary strings into YQL.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class RerankerUnavailable(AppError):
+    """Raised when ``rerank_mode='cross_encoder'`` is requested but no
+    RerankerProvider is configured in RetrievalService."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class RetrievalError(AppError):
+    """Raised when Vespa returns a non-200 status or a network error occurs
+    during a search request."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
 __all__ = [
     "AppError",
     "ChatNotFound",
@@ -141,4 +195,8 @@ __all__ = [
     "ChatDocumentAlreadyAssociated",
     "FactNotFound",
     "InvalidFactFilter",
+    "VespaDimensionMismatch",
+    "InvalidRetrievalFilter",
+    "RerankerUnavailable",
+    "RetrievalError",
 ]

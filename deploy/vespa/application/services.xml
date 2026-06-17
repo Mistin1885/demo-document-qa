@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<services version="1.0">
+  <container id="default" version="1.0">
+    <search>
+      <query-timeout>5.0</query-timeout>
+    </search>
+    <document-api/>
+    <document-processing/>
+  </container>
+  <content id="documents" version="1.0">
+    <redundancy>1</redundancy>
+    <documents>
+      <document name="document_chunk" type="document_chunk" mode="index"/>
+    </documents>
+    <group>
+      <node distribution-key="0" hostalias="node1"/>
+    </group>
+  </content>
+</services>
