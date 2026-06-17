@@ -550,7 +550,7 @@
                 {
                   "bbox": [72, 245, 540, 340],
                   "type": "text",
-                  "content": "We use Wikipedia as our knowledge base with 21 million 100-word passages. Dense retrieval uses a pre-trained DPR encoder fine-tuned on NQ training data. The generation model is T5-large (770M parameters) fine-tuned on each downstream task.",
+                  "content": "We use Wikipedia as our knowledge base with 21 million 100-word passages. Dense retrieval uses a pre-trained DPR encoder fine-tuned on NQ training data. The generation model is T5-large (770M parameters) fine-tuned on each downstream task. We train with a learning rate of 1e-4 and batch size of 32 for 10 epochs.",
                   "score": 0.98
                 }
               ]

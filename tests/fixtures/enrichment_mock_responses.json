@@ -1,0 +1,134 @@
+{
+  "_comment": "Deterministic mock LLM responses for enrichment tests (Phase 5.1). Keys are SHA-256 hex digests of the serialized prompt messages (same key used by MockChatProvider). Values are JSON strings the LLM would return.",
+  "default": {
+    "detailed_summary": "This section presents the core methodology of the paper. The authors describe a novel retrieval-augmented approach that combines dense and sparse retrieval signals. Experiments on multiple benchmarks demonstrate significant improvements over prior baselines. The method achieves state-of-the-art results while remaining computationally efficient.",
+    "compact_summary": "Novel RAG approach combining dense and sparse retrieval achieves state-of-the-art results.",
+    "keywords": [
+      {"term": "retrieval", "weight": 0.9, "source_block_ids": []},
+      {"term": "augmented", "weight": 0.85, "source_block_ids": []},
+      {"term": "generation", "weight": 0.8, "source_block_ids": []},
+      {"term": "transformer", "weight": 0.75, "source_block_ids": []},
+      {"term": "benchmark", "weight": 0.7, "source_block_ids": []}
+    ],
+    "entities": [
+      {"name": "BERT", "type": "model", "canonical": "BERT", "source_block_ids": []},
+      {"name": "TREC", "type": "dataset", "canonical": "TREC", "source_block_ids": []},
+      {"name": "F1", "type": "metric", "canonical": "F1 score", "source_block_ids": []}
+    ],
+    "definitions": [
+      {
+        "term": "RAG",
+        "definition": "Retrieval-Augmented Generation, a technique that grounds language model outputs in retrieved documents",
+        "source_block_ids": []
+      }
+    ],
+    "claims": [
+      {
+        "statement": "We demonstrate that our method outperforms all baselines on the TREC benchmark.",
+        "confidence": "high",
+        "source_block_ids": []
+      }
+    ],
+    "methods": [
+      {
+        "name": "Hybrid Retrieval",
+        "role": "proposed",
+        "summary": "Combines BM25 sparse retrieval with dense vector search using reciprocal rank fusion.",
+        "source_block_ids": []
+      }
+    ],
+    "limitations": [
+      {
+        "statement": "However, the approach requires significant GPU memory for the dense retrieval component.",
+        "scope": "method",
+        "source_block_ids": []
+      }
+    ],
+    "performance_facts": [
+      {
+        "metric": "F1",
+        "value": 0.812,
+        "unit": null,
+        "method": "Hybrid Retrieval",
+        "dataset": "TREC",
+        "baseline": "BM25",
+        "improvement": "+3.2% over BM25 baseline",
+        "source_block_ids": []
+      }
+    ]
+  },
+  "document_default": {
+    "overview": "This paper presents Adaptive Retrieval-Augmented Generation (AdaRAG), a novel framework that dynamically adjusts retrieval strategies based on query complexity. The authors propose a multi-stage pipeline combining BM25 sparse retrieval with dense vector search and a learned query router. Experiments on five scientific QA benchmarks demonstrate that AdaRAG consistently outperforms static RAG baselines by 4-8% on F1. The method introduces a lightweight complexity classifier that routes queries to the most appropriate retrieval strategy. Ablation studies confirm that each component of the pipeline contributes independently to overall performance gains.",
+    "contributions": [
+      {
+        "title": "Adaptive Query Router",
+        "summary": "A lightweight neural classifier that routes queries to BM25, dense, or hybrid retrieval based on estimated query complexity.",
+        "source_section_ids": []
+      },
+      {
+        "title": "Multi-Stage Reranking",
+        "summary": "A two-stage reranking pipeline using cross-encoder scores followed by diversity-aware selection improves final answer quality.",
+        "source_section_ids": []
+      }
+    ],
+    "methods": [
+      {
+        "name": "BM25 Sparse Retrieval",
+        "description": "Traditional term-frequency based retrieval using BM25 scoring over the document corpus.",
+        "source_section_ids": []
+      },
+      {
+        "name": "Dense Vector Search",
+        "description": "Approximate nearest neighbour search over BERT-encoded document embeddings using HNSW indexing.",
+        "source_section_ids": []
+      }
+    ],
+    "findings": [
+      {
+        "statement": "AdaRAG achieves +6.3% F1 on the SciQ benchmark compared to the best static baseline.",
+        "evidence": "Table 2 in the Experiments section",
+        "source_section_ids": []
+      },
+      {
+        "statement": "The query router correctly classifies 87% of queries into the optimal retrieval strategy.",
+        "evidence": "Ablation study in Section 4.3",
+        "source_section_ids": []
+      }
+    ],
+    "limitations": [
+      {
+        "text": "The complexity classifier requires labelled query-difficulty annotations which may be expensive to obtain for new domains.",
+        "source_section_ids": []
+      }
+    ],
+    "datasets": [
+      {
+        "name": "SciQ",
+        "role": "benchmark",
+        "size_hint": "13.7K questions",
+        "source_section_ids": []
+      }
+    ],
+    "metrics": [
+      {
+        "name": "F1",
+        "best_value": 0.874,
+        "baseline_value": 0.811,
+        "improvement": "+6.3% over best static RAG baseline",
+        "source_section_ids": []
+      }
+    ],
+    "conclusions": [
+      {
+        "statement": "Future work should explore reinforcement-learning based routing policies that adapt online to user feedback.",
+        "category": "future_work",
+        "source_section_ids": []
+      },
+      {
+        "statement": "AdaRAG demonstrates that adaptive retrieval strategy selection is a more effective approach than a single fixed retrieval method.",
+        "category": "finding",
+        "source_section_ids": []
+      }
+    ]
+  }
+}

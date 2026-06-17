@@ -98,9 +98,36 @@ class ChatDocumentAlreadyAssociated(AppError):
     def __init__(self, document_id: uuid.UUID, chat_id: uuid.UUID) -> None:
         self.document_id = document_id
         self.chat_id = chat_id
-        super().__init__(
-            f"Document {document_id} is already associated with chat {chat_id}."
-        )
+        super().__init__(f"Document {document_id} is already associated with chat {chat_id}.")
+
+
+# ---------------------------------------------------------------------------
+# Structured fact errors (Phase 5.3)
+# ---------------------------------------------------------------------------
+
+
+class FactNotFound(AppError):
+    """Raised when a StructuredFact cannot be found within the given ``chat_id`` scope.
+
+    CLAUDE.md §2 isolation: the error deliberately omits whether the fact
+    exists under a *different* chat — callers only see "not found in this chat".
+    """
+
+    def __init__(self, fact_id: uuid.UUID, chat_id: uuid.UUID) -> None:
+        self.fact_id = fact_id
+        self.chat_id = chat_id
+        super().__init__(f"Fact {fact_id} not found in chat {chat_id}.")
+
+
+class InvalidFactFilter(AppError):
+    """Raised when a caller supplies a fact filter that violates the restricted schema.
+
+    This error is raised by the service layer before any SQL is executed so that
+    the LLM / agent cannot inject arbitrary SQL predicates.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
 
 
 __all__ = [
@@ -112,4 +139,6 @@ __all__ = [
     "InvalidUpload",
     "DocumentAlreadyExists",
     "ChatDocumentAlreadyAssociated",
+    "FactNotFound",
+    "InvalidFactFilter",
 ]

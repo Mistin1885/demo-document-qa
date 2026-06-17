@@ -156,6 +156,11 @@
 - 2026-06-16｜Phase 4 全程使用 **deterministic uuid5 id**（block_id 與 node_id），方便 Phase 5 enrichment / Phase 6 Vespa upsert 重跑時不重複｜`src/app/parsing/{mapping,hierarchy}.py`
 - 2026-06-16｜Phase 4.1 post-processing 純函式搬遷到 `src/app/parsing/_postprocess.py`；`scripts/mineru_poc.py` 改為 thin wrapper（CLI 入口不變），讓 async client 與 CLI 共用同一份 post-processing 邏輯，避免兩份實作漂移｜`src/app/parsing/_postprocess.py`, `scripts/mineru_poc.py`
 - 2026-06-16｜Phase 4.4 heading-F1 gate threshold 保守設 0.3（非 0.8+）：golden corpus 只標 5 個高信心 heading，evaluator 對「真實樣本含更多 subsections」會給低 precision；harness 的設計目標是抓**大規模回退**（如完全沒抽出 references / appendix / abstract），不是 pixel-perfect。Phase 9 可再收緊｜`src/app/evaluation/parser_eval.py`、`data/fixtures/golden/2410.05779v3.json`
+- 2026-06-16｜Phase 5.1 FixtureChatProvider：deterministic JSON mock，import-time 載 `tests/fixtures/enrichment_mock_responses.json`，SHA-256 prompt hash key + fallback "default"；不破壞 49 個既有 MockProvider 測試｜`src/app/providers/mock.py`
+- 2026-06-16｜Phase 5.2 routing marker `[DOCUMENT_OVERVIEW]`：在 document-level system prompt 加 marker 字串，FixtureChatProvider 偵測該 marker 後 fallback `"document_default"`；對真實 LLM 無語義差異（只是文字）｜`src/app/enrichment/prompts.py`, `src/app/providers/mock.py`
+- 2026-06-16｜Phase 5.3 Structured facts heuristic-first：先用 regex 抽 metric / dataset / hyperparameter / model_param / cost / range；LLM-augmented 為 optional flag（測試一律 off）。real-data LightRAG 抽到 0 facts，因為論文 numbers 主要在 HTML table cells；table-cell extraction 列為 Phase 9 enhancement｜`src/app/enrichment/facts.py`
+- 2026-06-16｜Phase 5.3 FactFilter 受限 schema：Pydantic `extra="forbid"`；API 收 JSON body 給 query builder，禁絕 raw SQL；對應 CLAUDE.md §8 「query_structured_facts may only emit a restricted filter schema」｜`src/app/services/facts_service.py`, `src/app/api/facts.py`
+- 2026-06-16｜Phase 5.4 Chat manifest 只走 read-side aggregation（不呼叫 LLM、不打 Vespa），對應 CLAUDE.md §6 retrieval routing「Structural / deterministic fetch」規則的範例實作｜`src/app/services/manifest_service.py`
 - 2026-06-17｜Phase 5.1-5.2 enrichment 全程 **mock-LLM safe**：`MockChatProvider` 只回 hash 字串，因此 enrichment pipeline 設計成「呼叫 provider 是 hook + deterministic post-processing 抽欄位」，未來換真 LLM 只要替換 prompt + response parser，不必重寫測試｜`src/app/enrichment/{section,document}.py`
 - 2026-06-17｜Phase 5.1-5.2 不擴 `SummaryKind` enum：claims/definitions/methods/limitations/performance_facts/main_* 等細項全留在 Pydantic `SectionEnrichment` / `DocumentEnrichment` 物件中，由 Phase 6 灌入 Vespa 對應 `source_type`；PostgreSQL 只落兩種粒度的 Summary 列（`section_detailed`/`section_compact` + `document_overview`/`chapter_summary(abstract)`）｜`src/app/enrichment/models.py`
 - 2026-06-17｜Phase 5.3 `FactsFilter` 為 LangGraph `query_structured_facts` 工具的契約面：`ConfigDict(extra="forbid")` + 全欄位上下界；service `query_facts` 內部以 `filt.model_copy(update={"chat_id": current_chat_id})` 強制覆蓋 LLM 提供的 chat_id；StructuredFact.id 全 deterministic uuid5（NAMESPACE_OID）讓重跑 idempotent｜`src/app/services/facts_service.py`、`src/app/enrichment/facts.py`
@@ -180,9 +185,9 @@
 | import 健檢 | `uv run python -c "import app"` | ✅ | 2026-06-16 |
 | MinerU PoC | `uv run mineru -p data/2410.05779v3.pdf -o data/parsed -b hybrid-http-client -u http://localhost:8001` | ✅ | gate_pass=true；`scripts/mineru_poc.py` 可重跑 |
 | lint | `uv run ruff check src/app tests migrations scripts` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
-| 型別 | `uv run mypy src/app` | ✅ | 2026-06-16 — 35 source files, 0 issues |
-| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-17 — Phase 2/3/4 既有 + Phase 5.1 section 16 + 5.2 document 17 + 5.3 facts 8 + facts_service 24 + 5.4 manifest 13 = 295 綠 |
-| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-17 — 64 綠（無回退） |
+| 型別 | `uv run mypy src/app` | ✅ | 2026-06-17 — 49 source files, 0 issues |
+| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-17 — Phase 2-4 既有 224 + Phase 5.1 section 26 + 5.2 document 12 + 5.3 facts extractor/service + 5.4 manifest = 317 綠 |
+| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-17 — chats/sessions/documents + 4 isolation + Phase 5.3 facts_api 6 + Phase 5.4 manifest_api 5 = 75 綠 |
 | 評估測試 | `uv run pytest tests/evaluation` | ✅（parser harness） | 2026-06-17 — 31 綠；Phase 6/9 retrieval/goal-score harness 尚未建 |
 | Parser eval（real data, LightRAG） | `uv run python scripts/run_parser_eval.py` | ✅ PASS | `artifacts/evaluation/parser-report.{json,md}`；H-F1=0.333、math-recall=1.0、refs=21、figs=6、tables=6、eqs=2 |
 | Alembic upgrade | `uv run alembic upgrade head` | ✅ | 2026-06-16 — revision `b5b02bc9d209`；11 張表（10 + alembic_version）建立 |

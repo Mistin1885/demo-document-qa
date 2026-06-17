@@ -35,6 +35,7 @@ Design constraints (CLAUDE.md §3 / §12)
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from uuid import UUID
@@ -55,6 +56,18 @@ from app.parsing.models import (
     ParsedBlock,
 )
 from app.providers.base import ChatMessage, ChatProvider
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+
+
+class EnrichmentParseError(Exception):
+    """Raised when the LLM response cannot be parsed into a SectionEnrichment.
+
+    This is raised only after all retries are exhausted (max 2 attempts).
+    """
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -525,6 +538,314 @@ async def enrich_sections(
 
         content = _gather_text_for_node(node, block_map)
         enrichment = await _enrich_one_node(node, content, chat_provider)
+        enrichments.append(enrichment)
+
+    return enrichments
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.1 JSON-parsing enrichment (spec-compliant API)
+# ---------------------------------------------------------------------------
+
+_MAX_RETRIES = 2
+
+
+def _try_parse_json_enrichment(
+    raw: str,
+    node: DocumentNodeOut,
+    fallback_block_ids: list[UUID],
+    model_name: str,
+) -> SectionEnrichment:
+    """Parse *raw* LLM text into a ``SectionEnrichment``.
+
+    Strategy:
+    1. Strip markdown fences if present.
+    2. ``json.loads`` the text.
+    3. Fill missing/empty ``source_block_ids`` lists with *fallback_block_ids*.
+    4. Validate via ``SectionEnrichment``.
+
+    Parameters
+    ----------
+    raw:
+        Raw text from the LLM completion.
+    node:
+        The originating DocumentNodeOut (provides identity fields).
+    fallback_block_ids:
+        Used when a sub-list item has no ``source_block_ids``.
+    model_name:
+        Name of the chat provider model (stored in ``model_used``).
+
+    Raises
+    ------
+    ValueError
+        When ``raw`` cannot be decoded as valid JSON or the decoded object is
+        not a dict.
+    """
+    # Strip optional markdown code fences
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        # Remove first line (```json / ```) and last line (```)
+        stripped = "\n".join(lines[1:] if len(lines) > 2 else lines)
+        stripped = stripped.rstrip("`").strip()
+
+    data: object = json.loads(stripped)  # raises json.JSONDecodeError on failure
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected JSON object, got {type(data).__name__}")
+
+    # Inject fallback source_block_ids where missing
+    fb = [str(bid) for bid in fallback_block_ids]
+
+    def _fill_block_ids(items: list[object]) -> list[object]:
+        result: list[object] = []
+        for item in items:
+            if isinstance(item, dict):
+                if not item.get("source_block_ids"):
+                    item = {**item, "source_block_ids": fb}
+            result.append(item)
+        return result
+
+    for list_key in (
+        "keywords",
+        "entities",
+        "definitions",
+        "claims",
+        "methods",
+        "limitations",
+        "performance_facts",
+    ):
+        if list_key in data and isinstance(data[list_key], list):
+            data[list_key] = _fill_block_ids(data[list_key])  # type: ignore[index]
+
+    # Convert source_block_ids strings → UUID where possible
+    def _coerce_block_ids(items: list[object]) -> list[object]:
+        result: list[object] = []
+        for item in items:
+            if isinstance(item, dict) and "source_block_ids" in item:
+                raw_ids = item["source_block_ids"]
+                coerced: list[str] = []
+                for rid in raw_ids:
+                    try:
+                        coerced.append(str(uuid.UUID(str(rid))))
+                    except (ValueError, AttributeError):
+                        pass
+                item = {**item, "source_block_ids": coerced}
+            result.append(item)
+        return result
+
+    for list_key in (
+        "keywords",
+        "entities",
+        "definitions",
+        "claims",
+        "methods",
+        "limitations",
+        "performance_facts",
+    ):
+        if list_key in data and isinstance(data[list_key], list):
+            data[list_key] = _coerce_block_ids(data[list_key])  # type: ignore[index]
+
+    # Build token estimate
+    detailed = str(data.get("detailed_summary", ""))
+    token_est = _estimate_tokens(detailed)
+
+    return SectionEnrichment(
+        node_id=node.id,
+        chat_id=node.chat_id,
+        document_id=node.document_id,
+        node_type=node.node_type.value,
+        title=node.title,
+        page_start=node.page_start,
+        page_end=node.page_end,
+        source_block_ids=fallback_block_ids,
+        detailed_summary=detailed or "[empty]",
+        compact_summary=str(data.get("compact_summary", "")).strip() or "[empty]",
+        keywords=[
+            kw["term"] for kw in data.get("keywords", []) if isinstance(kw, dict) and "term" in kw
+        ],
+        technical_keywords=[],
+        entities=[
+            ent["name"]
+            for ent in data.get("entities", [])
+            if isinstance(ent, dict) and "name" in ent
+        ],
+        definitions=[
+            DefinitionItem(term=d["term"], definition=d["definition"])
+            for d in data.get("definitions", [])
+            if isinstance(d, dict) and "term" in d and "definition" in d
+        ],
+        claims=[
+            ClaimItem(text=c["statement"])
+            for c in data.get("claims", [])
+            if isinstance(c, dict) and "statement" in c
+        ],
+        methods=[
+            MethodItem(
+                name=m["name"],
+                description=m.get("summary", m.get("description", "")),
+            )
+            for m in data.get("methods", [])
+            if isinstance(m, dict) and "name" in m
+        ],
+        limitations=[
+            LimitationItem(text=lim["statement"])
+            for lim in data.get("limitations", [])
+            if isinstance(lim, dict) and "statement" in lim
+        ],
+        performance_facts=[
+            PerformanceFactItem(
+                metric=str(pf["metric"]),
+                value=str(pf["value"]),
+                context=pf.get("improvement") or pf.get("context") or None,
+            )
+            for pf in data.get("performance_facts", [])
+            if isinstance(pf, dict) and "metric" in pf and "value" in pf
+        ],
+        related_figure_ids=_figure_ids_for_node(node, {}),
+        related_table_ids=_table_ids_for_node(node, {}),
+        token_count=token_est,
+        token_count_estimate=token_est,
+        model_used=model_name,
+        traceable=True,
+    )
+
+
+async def enrich_section(
+    node: DocumentNodeOut,
+    child_paragraphs: list[DocumentNodeOut],
+    parsed_blocks_index: dict[UUID, ParsedBlock],
+    *,
+    chat_provider: ChatProvider,
+    chat_id: UUID,
+    document_id: UUID,
+) -> SectionEnrichment:
+    """Enrich a single section / subsection / appendix node.
+
+    This is the **JSON-parsing** variant that matches the Phase 5.1 spec API.
+    It sends a single prompt (system + user) to the LLM, then attempts to
+    parse the JSON response into a ``SectionEnrichment``.
+
+    Parameters
+    ----------
+    node:
+        The section/subsection/appendix node to enrich.
+    child_paragraphs:
+        Paragraph/figure/table/equation child nodes of *node*
+        (used to collect additional block IDs; may be empty).
+    parsed_blocks_index:
+        Mapping from ``block_id`` → ``ParsedBlock``.
+    chat_provider:
+        Any ``ChatProvider`` implementation.
+    chat_id:
+        The owning chat's UUID (injected by the service layer; NOT passed to the LLM).
+    document_id:
+        The owning document's UUID (injected by the service layer).
+
+    Returns
+    -------
+    SectionEnrichment
+
+    Raises
+    ------
+    EnrichmentParseError
+        When all retries are exhausted and the LLM response cannot be parsed.
+    """
+    from app.enrichment.prompts import build_section_messages
+
+    # Collect block IDs from node + child paragraphs
+    all_block_ids: list[UUID] = list(node.source_block_ids)
+    for child in child_paragraphs:
+        for bid in child.source_block_ids:
+            if bid not in all_block_ids:
+                all_block_ids.append(bid)
+
+    # Collect relevant ParsedBlocks
+    blocks: list[ParsedBlock] = [
+        parsed_blocks_index[bid] for bid in all_block_ids if bid in parsed_blocks_index
+    ]
+
+    messages = build_section_messages(node, blocks)
+
+    last_exc: Exception = EnrichmentParseError("No attempts made")
+    for _attempt in range(_MAX_RETRIES):
+        completion = await chat_provider.complete(
+            messages,
+            temperature=0.0,
+            max_tokens=2048,
+        )
+        try:
+            return _try_parse_json_enrichment(
+                completion.content,
+                node,
+                all_block_ids,
+                chat_provider.model,
+            )
+        except (json.JSONDecodeError, ValueError, Exception) as exc:
+            last_exc = exc
+
+    raise EnrichmentParseError(
+        f"Failed to parse enrichment for node {node.id} after {_MAX_RETRIES} retries: {last_exc}"
+    )
+
+
+async def enrich_document_sections(
+    hierarchy: HierarchyResult,
+    parsed_blocks: list[ParsedBlock],
+    *,
+    chat_provider: ChatProvider,
+) -> list[SectionEnrichment]:
+    """Enrich all enrichable nodes in *hierarchy* using the JSON-parsing path.
+
+    Enrichable node types: ``section``, ``subsection``, ``abstract``, ``appendix``.
+
+    Parameters
+    ----------
+    hierarchy:
+        Full hierarchy produced by ``derive_hierarchy`` (Phase 4.3).
+    parsed_blocks:
+        Flat list of ``ParsedBlock`` instances for the same document.
+    chat_provider:
+        Any ``ChatProvider`` implementation.
+
+    Returns
+    -------
+    list[SectionEnrichment]
+        One ``SectionEnrichment`` per enrichable node, in ``order_index`` order.
+
+    Notes
+    -----
+    - ``chat_id`` for every enrichment is taken exclusively from
+      ``hierarchy.chat_id`` — never from an external argument.
+    - This function uses the JSON-parsing enricher (``enrich_section``);
+      if parsing fails for a node, the error is silently caught and a
+      heuristic fallback (``_enrich_one_node``) is used instead.
+    """
+    _EXTENDED_ENRICHABLE: frozenset[NodeType] = frozenset(
+        [NodeType.section, NodeType.subsection, NodeType.appendix, NodeType.abstract]
+    )
+
+    block_map: dict[UUID, ParsedBlock] = {b.block_id: b for b in parsed_blocks}
+
+    enrichments: list[SectionEnrichment] = []
+
+    for node in hierarchy.nodes:
+        if node.node_type not in _EXTENDED_ENRICHABLE:
+            continue
+
+        try:
+            enrichment = await enrich_section(
+                node,
+                child_paragraphs=[],
+                parsed_blocks_index=block_map,
+                chat_provider=chat_provider,
+                chat_id=hierarchy.chat_id,
+                document_id=hierarchy.document_id,
+            )
+        except EnrichmentParseError:
+            # Fallback to heuristic enricher
+            content = _gather_text_for_node(node, block_map)
+            enrichment = await _enrich_one_node(node, content, chat_provider)
+
         enrichments.append(enrichment)
 
     return enrichments

@@ -250,12 +250,9 @@ async def build_chat_manifest(
         # ------------------------------------------------------------------
         # Query 2d: distinct structured_fact kinds for this document.
         # ------------------------------------------------------------------
-        sf_kinds_stmt = (
-            select(distinct(StructuredFact.kind))
-            .where(
-                StructuredFact.chat_id == current_chat_id,
-                StructuredFact.document_id == doc_id,
-            )
+        sf_kinds_stmt = select(distinct(StructuredFact.kind)).where(
+            StructuredFact.chat_id == current_chat_id,
+            StructuredFact.document_id == doc_id,
         )
         sf_kinds_result = await session.execute(sf_kinds_stmt)
         sf_kinds: list[str] = [row for row in sf_kinds_result.scalars().all()]

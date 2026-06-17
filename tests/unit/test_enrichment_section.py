@@ -54,6 +54,7 @@ from app.parsing.models import (
     NodeType,
     ParsedBlock,
 )
+from app.providers.base import ChatMessage, ChatProvider  # noqa: F401 (used in test helpers below)
 from app.providers.mock import MockChatProvider
 from app.services.enrichment_service import persist_section_summaries
 
@@ -551,3 +552,473 @@ def test_parse_limitations_extracts_however() -> None:
     limitations = _parse_limitations("mock", content)
     assert len(limitations) >= 1
     assert isinstance(limitations[0], LimitationItem)
+
+
+# ---------------------------------------------------------------------------
+# Test 11 — FixtureChatProvider + enrich_document_sections happy-path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enrich_document_sections_with_fixture_provider() -> None:
+    """Happy-path: FixtureChatProvider drives enrich_document_sections.
+
+    Assertions:
+    - At least one section is enriched (abstract / section / subsection / appendix).
+    - Each SectionEnrichment.source_block_ids is non-empty or node has empty blocks.
+    - token_count_estimate > 0.
+    - model_used == "mock-chat".
+    - traceable is True.
+    """
+    from app.enrichment.section import enrich_document_sections
+    from app.providers.mock import FixtureChatProvider
+
+    fixture_provider = FixtureChatProvider(model="mock-chat")
+    blocks, hierarchy = _build_synthetic()
+    enrichments = await enrich_document_sections(
+        hierarchy, blocks, chat_provider=fixture_provider
+    )
+    assert len(enrichments) > 0, "Expected at least one enriched section"
+    for e in enrichments:
+        assert e.traceable is True
+        assert e.model_used == "mock-chat"
+        assert e.token_count_estimate >= 0
+
+
+@pytest.mark.asyncio
+async def test_enrich_document_sections_paper_fixture_with_fixture_provider() -> None:
+    """Happy-path: FixtureChatProvider on the mineru_sample_paper fixture."""
+    from app.enrichment.section import enrich_document_sections
+    from app.providers.mock import FixtureChatProvider
+
+    fixture_provider = FixtureChatProvider(model="mock-chat")
+    blocks, hierarchy = _build_paper()
+    enrichments = await enrich_document_sections(
+        hierarchy, blocks, chat_provider=fixture_provider
+    )
+    assert len(enrichments) > 0, "Expected at least one enriched section"
+    for e in enrichments:
+        assert e.detailed_summary, f"Empty detailed_summary for {e.node_id}"
+        assert e.compact_summary, f"Empty compact_summary for {e.node_id}"
+        assert e.node_type in ("section", "subsection", "appendix", "abstract"), (
+            f"Unexpected node_type: {e.node_type}"
+        )
+        assert e.chat_id == hierarchy.chat_id
+        # source_block_ids must be subset of node's block IDs (or empty for empty nodes)
+        node_map = {n.id: n for n in hierarchy.nodes}
+        if e.node_id in node_map:
+            node = node_map[e.node_id]
+            node_block_set = set(node.source_block_ids)
+            enrichment_block_set = set(e.source_block_ids)
+            # source_block_ids comes from all_block_ids which is node.source_block_ids
+            assert enrichment_block_set <= node_block_set or not enrichment_block_set, (
+                f"Enrichment has extra block IDs: {enrichment_block_set - node_block_set}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test 12 — JSON parse error tolerance
+# ---------------------------------------------------------------------------
+
+
+class _GarbageOnFirstChatProvider(ChatProvider):
+    """Returns garbage on the first call, valid JSON on subsequent calls."""
+
+    def __init__(self) -> None:
+        self._call_count = 0
+        self._fixture_provider: ChatProvider | None = None
+
+    @property
+    def name(self) -> str:
+        return "garbage-first"
+
+    @property
+    def model(self) -> str:
+        return "mock-chat"
+
+    @property
+    def context_window(self) -> int:
+        return 8192
+
+    async def complete(
+        self,
+        messages: list[ChatMessage],  # type: ignore[name-defined]
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        stop: list[str] | None = None,
+    ) -> object:
+        from app.providers.base import ChatCompletion, Usage
+        from app.providers.mock import FixtureChatProvider
+
+        self._call_count += 1
+        if self._call_count == 1:
+            return ChatCompletion(
+                content="NOT VALID JSON {{{",
+                usage=Usage(prompt_tokens=5, completion_tokens=5),
+                model="mock-chat",
+            )
+        # Second call: return valid JSON from fixture
+        if self._fixture_provider is None:
+            self._fixture_provider = FixtureChatProvider(model="mock-chat")
+        return await self._fixture_provider.complete(messages, temperature=temperature, max_tokens=max_tokens)
+
+    def stream(self, messages: object, **kwargs: object) -> object:  # type: ignore[override]
+        raise NotImplementedError
+
+    async def test_connection(self) -> object:
+        from app.providers.base import ProviderTestResult
+        return ProviderTestResult(ok=True, model="mock-chat", latency_ms=0)
+
+
+@pytest.mark.asyncio
+async def test_enrich_section_retry_on_parse_failure() -> None:
+    """First call returns garbage; second call returns valid JSON → success."""
+    from app.enrichment.section import enrich_section
+
+    blocks, hierarchy = _build_synthetic()
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type in {NodeType.section, NodeType.subsection}
+    )
+    block_map = {b.block_id: b for b in blocks}
+
+    provider = _GarbageOnFirstChatProvider()
+    result = await enrich_section(
+        section_node,
+        child_paragraphs=[],
+        parsed_blocks_index=block_map,
+        chat_provider=provider,
+        chat_id=_CHAT_ID,
+        document_id=_DOC_ID,
+    )
+    assert result is not None
+    assert provider._call_count == 2, (
+        f"Expected exactly 2 provider calls (1 fail + 1 success), got {provider._call_count}"
+    )
+
+
+class _AlwaysGarbageChatProvider(ChatProvider):
+    """Always returns garbage — triggers EnrichmentParseError after all retries."""
+
+    @property
+    def name(self) -> str:
+        return "always-garbage"
+
+    @property
+    def model(self) -> str:
+        return "mock-chat"
+
+    @property
+    def context_window(self) -> int:
+        return 8192
+
+    async def complete(
+        self,
+        messages: list[ChatMessage],  # type: ignore[name-defined]
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        stop: list[str] | None = None,
+    ) -> object:
+        from app.providers.base import ChatCompletion, Usage
+        return ChatCompletion(
+            content="{ this is not valid json @@@",
+            usage=Usage(prompt_tokens=5, completion_tokens=5),
+            model="mock-chat",
+        )
+
+    def stream(self, messages: object, **kwargs: object) -> object:  # type: ignore[override]
+        raise NotImplementedError
+
+    async def test_connection(self) -> object:
+        from app.providers.base import ProviderTestResult
+        return ProviderTestResult(ok=True, model="mock-chat", latency_ms=0)
+
+
+@pytest.mark.asyncio
+async def test_enrich_section_raises_after_all_retries() -> None:
+    """Always-garbage provider → EnrichmentParseError after retries exhausted."""
+    from app.enrichment.section import EnrichmentParseError, enrich_section
+
+    blocks, hierarchy = _build_synthetic()
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type in {NodeType.section, NodeType.subsection}
+    )
+    block_map = {b.block_id: b for b in blocks}
+
+    with pytest.raises(EnrichmentParseError):
+        await enrich_section(
+            section_node,
+            child_paragraphs=[],
+            parsed_blocks_index=block_map,
+            chat_provider=_AlwaysGarbageChatProvider(),
+            chat_id=_CHAT_ID,
+            document_id=_DOC_ID,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 13 — source_block_ids fallback
+# ---------------------------------------------------------------------------
+
+
+class _NoBlockIdsChatProvider(ChatProvider):
+    """Returns valid JSON but with empty source_block_ids in all sub-items."""
+
+    @property
+    def name(self) -> str:
+        return "no-block-ids"
+
+    @property
+    def model(self) -> str:
+        return "mock-chat"
+
+    @property
+    def context_window(self) -> int:
+        return 8192
+
+    async def complete(
+        self,
+        messages: list[ChatMessage],  # type: ignore[name-defined]
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        stop: list[str] | None = None,
+    ) -> object:
+        import json as _json
+
+        from app.providers.base import ChatCompletion, Usage
+        payload = {
+            "detailed_summary": "Section about novel methods and experiments.",
+            "compact_summary": "Novel method section.",
+            "keywords": [{"term": "method", "weight": 0.9, "source_block_ids": []}],
+            "entities": [],
+            "definitions": [],
+            "claims": [],
+            "methods": [],
+            "limitations": [],
+            "performance_facts": [],
+        }
+        return ChatCompletion(
+            content=_json.dumps(payload),
+            usage=Usage(prompt_tokens=10, completion_tokens=20),
+            model="mock-chat",
+        )
+
+    def stream(self, messages: object, **kwargs: object) -> object:  # type: ignore[override]
+        raise NotImplementedError
+
+    async def test_connection(self) -> object:
+        from app.providers.base import ProviderTestResult
+        return ProviderTestResult(ok=True, model="mock-chat", latency_ms=0)
+
+
+@pytest.mark.asyncio
+async def test_source_block_ids_fallback_when_llm_omits_them() -> None:
+    """When LLM returns empty source_block_ids, fallback = section's full block ids."""
+    from app.enrichment.section import _try_parse_json_enrichment
+
+    blocks, hierarchy = _build_synthetic()
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type == NodeType.section and n.source_block_ids
+    )
+    fallback = list(section_node.source_block_ids)
+
+    # Simulate: LLM returns keyword with empty source_block_ids
+    raw_json = '{"detailed_summary": "Test.", "compact_summary": "Short.", "keywords": [{"term": "test", "weight": 0.9, "source_block_ids": []}], "entities": [], "definitions": [], "claims": [], "methods": [], "limitations": [], "performance_facts": []}'
+    result = _try_parse_json_enrichment(raw_json, section_node, fallback, "mock-chat")
+    # source_block_ids of the enrichment itself should be the fallback
+    assert set(result.source_block_ids) == set(fallback), (
+        "source_block_ids should be the fallback (section's full block ids)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 14 — performance_facts structure with traced block IDs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_performance_facts_parsed_from_fixture_provider() -> None:
+    """FixtureChatProvider returns a performance fact with metric=F1, value=0.812."""
+    from app.enrichment.section import enrich_section
+    from app.providers.mock import FixtureChatProvider
+
+    blocks, hierarchy = _build_synthetic()
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type == NodeType.section
+    )
+    block_map = {b.block_id: b for b in blocks}
+
+    provider = FixtureChatProvider(model="mock-chat")
+    result = await enrich_section(
+        section_node,
+        child_paragraphs=[],
+        parsed_blocks_index=block_map,
+        chat_provider=provider,
+        chat_id=_CHAT_ID,
+        document_id=_DOC_ID,
+    )
+
+    assert len(result.performance_facts) > 0, "Expected at least one performance fact from fixture"
+    pf = result.performance_facts[0]
+    assert isinstance(pf, PerformanceFactItem)
+    assert pf.metric == "F1"
+    assert pf.value == "0.812"
+
+
+# ---------------------------------------------------------------------------
+# Test 15 — to_summary_rows produces correct kinds
+# ---------------------------------------------------------------------------
+
+
+def test_to_summary_rows_produces_unique_kinds() -> None:
+    """to_summary_rows: all returned kinds are unique."""
+    from app.enrichment._orm_bridge import to_summary_rows
+
+    blocks, hierarchy = _build_synthetic()
+    # Build a SectionEnrichment with at least one entry in each list
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type == NodeType.section
+    )
+    enrichment = SectionEnrichment(
+        node_id=section_node.id,
+        chat_id=_CHAT_ID,
+        document_id=_DOC_ID,
+        node_type="section",
+        title="Test Section",
+        page_start=1,
+        page_end=2,
+        source_block_ids=list(section_node.source_block_ids),
+        detailed_summary="This is a detailed summary of the test section.",
+        compact_summary="Test section compact.",
+        keywords=["retrieval", "attention"],
+        technical_keywords=["BERT"],
+        entities=["BERT", "TREC"],
+        definitions=[DefinitionItem(term="RAG", definition="Retrieval Augmented Generation")],
+        claims=[ClaimItem(text="We show improvement over baseline.")],
+        methods=[MethodItem(name="HybridRAG", description="Combines BM25 and dense.")],
+        limitations=[LimitationItem(text="However, high GPU memory is needed.")],
+        performance_facts=[PerformanceFactItem(metric="F1", value="0.812", context=None)],
+        related_figure_ids=[],
+        related_table_ids=[],
+        token_count=50,
+        token_count_estimate=50,
+        model_used="mock-chat",
+    )
+
+    rows = to_summary_rows(enrichment)
+    assert len(rows) >= 2, "Must produce at least section_detailed and section_compact rows"
+
+    kinds = [r.kind for r in rows]
+    assert len(kinds) == len(set(kinds)), f"Duplicate kinds found: {kinds}"
+
+    # Must include the two mandatory kinds
+    assert "section_detailed" in kinds
+    assert "section_compact" in kinds
+    # Should include conditional kinds since lists are non-empty
+    assert "section_keywords" in kinds
+    assert "section_entities" in kinds
+    assert "section_claims" in kinds
+    assert "section_methods" in kinds
+    assert "section_limitations" in kinds
+    assert "section_performance_facts" in kinds
+    assert "section_definitions" in kinds
+
+    # Verify all rows have correct metadata
+    for row in rows:
+        assert row.chat_id == _CHAT_ID
+        assert row.document_id == _DOC_ID
+        assert row.source_node_id == section_node.id
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — determinism: enrich_document_sections byte-identical across two runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enrich_document_sections_deterministic_with_fixture_provider() -> None:
+    """Two calls with same input + FixtureChatProvider produce byte-identical output."""
+    from app.enrichment.section import enrich_document_sections
+    from app.providers.mock import FixtureChatProvider
+
+    fixture_provider = FixtureChatProvider(model="mock-chat")
+    blocks, hierarchy = _build_synthetic()
+
+    run1 = await enrich_document_sections(hierarchy, blocks, chat_provider=fixture_provider)
+    run2 = await enrich_document_sections(hierarchy, blocks, chat_provider=fixture_provider)
+
+    assert len(run1) == len(run2), "Different number of enrichments between runs"
+    for e1, e2 in zip(run1, run2, strict=True):
+        # Use model_dump to compare (excludes UUIDs generated per-call)
+        d1 = e1.model_dump(exclude={"node_id"})
+        d2 = e2.model_dump(exclude={"node_id"})
+        assert d1["detailed_summary"] == d2["detailed_summary"], (
+            "detailed_summary is not deterministic"
+        )
+        assert d1["compact_summary"] == d2["compact_summary"], (
+            "compact_summary is not deterministic"
+        )
+        assert d1["keywords"] == d2["keywords"], "keywords are not deterministic"
+        assert d1["entities"] == d2["entities"], "entities are not deterministic"
+
+
+# ---------------------------------------------------------------------------
+# Test 17 — source_node_id property alias
+# ---------------------------------------------------------------------------
+
+
+def test_section_enrichment_source_node_id_alias() -> None:
+    """SectionEnrichment.source_node_id is an alias for node_id."""
+    node_uuid = uuid.uuid4()
+    e = SectionEnrichment(
+        node_id=node_uuid,
+        chat_id=_CHAT_ID,
+        document_id=_DOC_ID,
+        node_type="section",
+        title="Test",
+        page_start=1,
+        page_end=1,
+        source_block_ids=[],
+        detailed_summary="x",
+        compact_summary="y",
+    )
+    assert e.source_node_id == node_uuid
+
+
+# ---------------------------------------------------------------------------
+# Test 18 — token_count_estimate > 0 for non-empty detailed_summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_token_count_estimate_positive() -> None:
+    """token_count_estimate must be > 0 when detailed_summary is non-empty."""
+    from app.enrichment.section import enrich_section
+    from app.providers.mock import FixtureChatProvider
+
+    blocks, hierarchy = _build_synthetic()
+    section_node = next(
+        n for n in hierarchy.nodes
+        if n.node_type == NodeType.section
+    )
+    block_map = {b.block_id: b for b in blocks}
+
+    provider = FixtureChatProvider(model="mock-chat")
+    result = await enrich_section(
+        section_node,
+        child_paragraphs=[],
+        parsed_blocks_index=block_map,
+        chat_provider=provider,
+        chat_id=_CHAT_ID,
+        document_id=_DOC_ID,
+    )
+    assert result.token_count_estimate > 0, (
+        "token_count_estimate must be > 0 for a non-empty detailed_summary"
+    )

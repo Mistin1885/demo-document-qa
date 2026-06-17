@@ -27,6 +27,8 @@ from app.errors import (
     DocumentAlreadyExists,
     DocumentNotFound,
     DocumentStorageError,
+    FactNotFound,
+    InvalidFactFilter,
     InvalidUpload,
     SessionNotFound,
 )
@@ -109,12 +111,26 @@ async def document_storage_error_handler(
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
+@app.exception_handler(FactNotFound)
+async def fact_not_found_handler(request: Request, exc: FactNotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidFactFilter)
+async def invalid_fact_filter_handler(
+    request: Request, exc: InvalidFactFilter
+) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
 
 from app.api import chats  # noqa: E402,I001
 from app.api import documents  # noqa: E402,I001
+from app.api import facts  # noqa: E402,I001
+from app.api import manifest  # noqa: E402,I001
 from app.api import sessions  # noqa: E402,I001
 
 app.include_router(chats.router, prefix="/chats", tags=["chats"])
@@ -127,6 +143,16 @@ app.include_router(
     documents.router,
     prefix="/chats/{chat_id}/documents",
     tags=["documents"],
+)
+app.include_router(
+    facts.router,
+    prefix="/chats/{chat_id}/facts",
+    tags=["facts"],
+)
+app.include_router(
+    manifest.router,
+    prefix="/chats/{chat_id}/manifest",
+    tags=["manifest"],
 )
 
 

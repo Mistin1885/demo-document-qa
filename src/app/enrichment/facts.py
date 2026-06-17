@@ -317,23 +317,94 @@ def _safe_float(s: str) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_block_to_section(nodes: list[DocumentNodeOut]) -> dict[uuid.UUID, uuid.UUID | None]:
-    """Return mapping of block_id → enclosing section/subsection node id."""
-    mapping: dict[uuid.UUID, uuid.UUID | None] = {}
+_SECTION_NODE_TYPES = frozenset((NodeType.section, NodeType.subsection, NodeType.appendix))
+
+
+def _build_node_index(
+    nodes: list[DocumentNodeOut],
+) -> tuple[
+    dict[uuid.UUID, DocumentNodeOut],  # id → node
+    dict[uuid.UUID, uuid.UUID | None],  # block_id → containing-node id
+]:
+    """Build two fast-lookup indexes from the node list.
+
+    Returns
+    -------
+    node_by_id
+        Maps node UUID → DocumentNodeOut for O(1) parent traversal.
+    block_to_node
+        Maps block UUID → the node whose ``source_block_ids`` contains it.
+    """
+    node_by_id: dict[uuid.UUID, DocumentNodeOut] = {}
+    block_to_node: dict[uuid.UUID, uuid.UUID | None] = {}
     for node in nodes:
-        if node.node_type in (NodeType.section, NodeType.subsection, NodeType.appendix):
-            for bid in node.source_block_ids:
-                mapping[bid] = node.id
-    return mapping
+        node_by_id[node.id] = node
+        for bid in node.source_block_ids:
+            block_to_node[bid] = node.id
+    return node_by_id, block_to_node
 
 
-def _section_title_for_block(block: ParsedBlock, nodes: list[DocumentNodeOut]) -> str | None:
-    """Return the title of the enclosing section/subsection for ``block``."""
-    for node in reversed(nodes):
-        if node.node_type not in (NodeType.section, NodeType.subsection, NodeType.appendix):
+def _build_block_to_section(nodes: list[DocumentNodeOut]) -> dict[uuid.UUID, uuid.UUID | None]:
+    """Return mapping of block_id → nearest enclosing section/subsection node id.
+
+    Walk up the parent chain from the node that directly owns the block until
+    a section/subsection/appendix node is found.  This handles the common case
+    where the hierarchy builder emits ``paragraph`` nodes that are children of
+    section/subsection nodes.
+    """
+    node_by_id, block_to_node = _build_node_index(nodes)
+    result: dict[uuid.UUID, uuid.UUID | None] = {}
+
+    for bid, owning_id in block_to_node.items():
+        if owning_id is None:
+            result[bid] = None
             continue
-        if block.block_id in node.source_block_ids:
-            return node.title
+        owning = node_by_id.get(owning_id)
+        if owning is None:
+            result[bid] = None
+            continue
+        # Walk up the parent chain looking for a section/subsection/appendix
+        current: DocumentNodeOut | None = owning
+        section_id: uuid.UUID | None = None
+        while current is not None:
+            if current.node_type in _SECTION_NODE_TYPES:
+                section_id = current.id
+                break
+            parent_id = current.parent_id
+            current = node_by_id.get(parent_id) if parent_id is not None else None
+        result[bid] = section_id
+
+    return result
+
+
+def _section_title_for_block(
+    block: ParsedBlock,
+    nodes: list[DocumentNodeOut],
+    *,
+    _node_by_id: dict[uuid.UUID, DocumentNodeOut] | None = None,
+    _block_to_node: dict[uuid.UUID, uuid.UUID | None] | None = None,
+) -> str | None:
+    """Return the title of the nearest enclosing section/subsection for ``block``.
+
+    Walks up the parent chain from the node that directly owns the block.
+    Falls back to a linear scan when the indexes are not provided (for
+    backward-compatible call sites that pass only (block, nodes)).
+    """
+    if _node_by_id is None or _block_to_node is None:
+        node_by_id, block_to_node = _build_node_index(nodes)
+    else:
+        node_by_id = _node_by_id
+        block_to_node = _block_to_node
+
+    owning_id = block_to_node.get(block.block_id)
+    if owning_id is None:
+        return None
+    current: DocumentNodeOut | None = node_by_id.get(owning_id)
+    while current is not None:
+        if current.node_type in _SECTION_NODE_TYPES and current.title:
+            return current.title
+        parent_id = current.parent_id
+        current = node_by_id.get(parent_id) if parent_id is not None else None
     return None
 
 
@@ -557,6 +628,8 @@ def extract_structured_facts(
     chat_id = hierarchy.chat_id
     nodes = hierarchy.nodes
 
+    # Build indexes once for O(1) lookups during extraction
+    node_by_id, block_to_node = _build_node_index(nodes)
     block_to_section = _build_block_to_section(nodes)
 
     # Global sequence counter (mutable list for closure mutability)
@@ -574,7 +647,9 @@ def extract_structured_facts(
         if not text:
             continue
 
-        section_title = _section_title_for_block(block, nodes)
+        section_title = _section_title_for_block(
+            block, nodes, _node_by_id=node_by_id, _block_to_node=block_to_node
+        )
         source_node_id = _node_id_for_block(block, block_to_section)
 
         all_facts.extend(

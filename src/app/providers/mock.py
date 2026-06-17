@@ -25,8 +25,10 @@ Usage in tests
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from app.providers.base import (
     ChatChunk,
@@ -254,3 +256,145 @@ class MockRerankerProvider(RerankerProvider):
 
     async def test_connection(self) -> ProviderTestResult:
         return ProviderTestResult(ok=True, model="mock-reranker", latency_ms=0)
+
+
+# ---------------------------------------------------------------------------
+# FixtureChatProvider
+# ---------------------------------------------------------------------------
+
+
+class FixtureChatProvider(ChatProvider):
+    """Deterministic chat provider backed by a fixture JSON file.
+
+    Loads ``tests/fixtures/enrichment_mock_responses.json`` at import time
+    and returns the ``"default"`` entry (serialized as a JSON string) for
+    every prompt.  The prompt hash is computed with the same algorithm as
+    ``MockChatProvider`` so that future extensions can map specific prompts
+    to specific fixture responses.
+
+    Falls back to ``MockChatProvider`` when the fixture file is not found or
+    cannot be read.
+
+    This provider is intended **only for tests** — it never makes network
+    calls.
+
+    Parameters
+    ----------
+    model:
+        Model name to report (default: ``"mock-chat"``).
+    fixture_path:
+        Path to the fixture JSON file.  Defaults to
+        ``<repo_root>/tests/fixtures/enrichment_mock_responses.json``.
+    """
+
+    _DEFAULT_FIXTURE: Path = (
+        Path(__file__).parent.parent.parent.parent
+        / "tests"
+        / "fixtures"
+        / "enrichment_mock_responses.json"
+    )
+
+    def __init__(
+        self,
+        model: str = "mock-chat",
+        fixture_path: Path | None = None,
+    ) -> None:
+        self._model = model
+        self._fallback = MockChatProvider(model=model)
+        resolved = fixture_path or self._DEFAULT_FIXTURE
+        self._responses: dict[str, object] = {}
+        try:
+            with resolved.open(encoding="utf-8") as fh:
+                self._responses = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            pass  # will fall back to MockChatProvider
+
+    # ------------------------------------------------------------------
+    # ChatProvider interface
+    # ------------------------------------------------------------------
+
+    @property
+    def name(self) -> str:
+        return "fixture"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def context_window(self) -> int:
+        return 8_192
+
+    _DOCUMENT_OVERVIEW_MARKER = "[DOCUMENT_OVERVIEW]"
+
+    def _is_document_overview_prompt(self, messages: list[ChatMessage]) -> bool:
+        """Return True when any message contains the document-overview routing marker."""
+        return any(self._DOCUMENT_OVERVIEW_MARKER in m.content for m in messages)
+
+    def _get_response(self, messages: list[ChatMessage]) -> str:
+        """Return the fixture response JSON string for *messages*.
+
+        Routing priority:
+        1. Exact SHA-256 hash match.
+        2. ``"document_default"`` — when any message contains
+           ``[DOCUMENT_OVERVIEW]`` (Phase 5.2 routing marker).
+        3. ``"default"`` — Phase 5.1 section-level fallback.
+        4. Last resort: ``MockChatProvider`` hash-derived string.
+        """
+        serialized = "|".join(f"{m.role}:{m.content}" for m in messages)
+        hash_hex = hashlib.sha256(serialized.encode()).hexdigest()
+
+        # 1. Try exact hash match first
+        if hash_hex in self._responses:
+            entry = self._responses[hash_hex]
+            return json.dumps(entry) if not isinstance(entry, str) else entry
+
+        # 2. Document-overview routing: prefer "document_default" fixture
+        if self._is_document_overview_prompt(messages):
+            doc_default = self._responses.get("document_default")
+            if doc_default is not None:
+                return json.dumps(doc_default) if not isinstance(doc_default, str) else doc_default
+
+        # 3. Try "default" fallback (Phase 5.1 section-level)
+        default = self._responses.get("default")
+        if default is not None:
+            return json.dumps(default) if not isinstance(default, str) else default
+
+        # 4. Last resort: MockChatProvider behaviour
+        hash_int = int(hash_hex[:16], 16) % 10_000
+        return f"[mock {self._model}] response-{hash_int}"
+
+    async def complete(
+        self,
+        messages: list[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        stop: list[str] | None = None,
+    ) -> ChatCompletion:
+        content = self._get_response(messages)
+        return ChatCompletion(
+            content=content,
+            usage=Usage(prompt_tokens=10, completion_tokens=len(content.split())),
+            model=self._model,
+        )
+
+    async def stream(  # type: ignore[override]
+        self,
+        messages: list[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        stop: list[str] | None = None,
+    ) -> AsyncIterator[ChatChunk]:
+        content = self._get_response(messages)
+        words = content.split()
+        for i, word in enumerate(words):
+            is_last = i == len(words) - 1
+            yield ChatChunk(
+                delta=word if i == 0 else f" {word}",
+                finish_reason="stop" if is_last else None,
+            )
+
+    async def test_connection(self) -> ProviderTestResult:
+        return ProviderTestResult(ok=True, model=self._model, latency_ms=0)
