@@ -23,13 +23,14 @@ import json
 import uuid
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.errors import ChatNotFound, SessionNotFound
+from app.models.domain import MessageRead
 from app.providers.mock import MockChatProvider
 from app.services.qa_service import QAService
 
@@ -162,3 +163,38 @@ async def post_message(
         content=json.loads(response.model_dump_json()),
         status_code=status.HTTP_200_OK,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /chats/{chat_id}/sessions/{session_id}/messages
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "",
+    response_model=list[MessageRead],
+    summary="List persisted messages for a session",
+)
+async def list_messages(
+    chat_id: uuid.UUID,
+    session_id: uuid.UUID,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_session),
+) -> list[MessageRead]:
+    """Return persisted user/assistant messages ordered by ``created_at``.
+
+    Session scope is enforced inside ``session_service.list_messages`` — a
+    session belonging to a different chat raises ``SessionNotFound`` and the
+    client receives 404 (no cross-chat leakage in the error shape).
+    """
+    from app.services import session_service  # noqa: PLC0415
+
+    try:
+        return await session_service.list_messages(
+            db, chat_id=chat_id, session_id=session_id, limit=limit, offset=offset
+        )
+    except SessionNotFound as exc:
+        raise _not_found(str(exc)) from exc
+    except ChatNotFound as exc:
+        raise _not_found(str(exc)) from exc

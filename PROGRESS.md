@@ -7,7 +7,10 @@
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 > **測試密度上限：每個 test 檔 ≤10 個測試項（詳見 `CLAUDE.md §12.1`）。**
 
-最後更新：2026-06-18 ｜ 當前 Phase：_Phase 7 完成（LangGraph Agent 全綠 / Agent QA /20 mandatory PASS）_ ｜ 累計 Goal Score：_Parsing /15 + Vespa Retrieval /20 + Agent QA /20 mandatory ALL PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment_
+最後更新：2026-06-18 ｜ 當前 Phase：_Phase 8 完成（Next.js 15 App Router 前端骨架 + Chat Sidebar + Documents Panel + Chat UI（SSE streaming/citations/stop）+ Model Settings UI）_ ｜ 累計 Goal Score：_Parsing /15 + Vespa Retrieval /20 + Agent QA /20 mandatory ALL PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 8 Frontend 表面完整_
+
+> **2026-06-18 Phase 8 完成**：Next.js 15 App Router + React 19 + TanStack Query v5 + Tailwind；5 個 sub-agent 平行/串行依 8.1 → {8.2,8.3,8.5} → 8.4 順序產出；前端 27 tests / 5 files 全綠每檔 ≤10；lint / typecheck / build 全綠；瀏覽器 smoke test：`/` 三欄（chat-sidebar / chat-panel / documents-panel）+ `/settings` 四 tab（Chat / Embedding / Reranker / Chat defaults）皆能渲染。後端額外加 `GET /chats/{chat_id}/sessions/{session_id}/messages` 給 history reload；`CORSMiddleware` 開放 localhost:3000/:3000，後端 356 tests 全綠不變。
+
 
 > **2026-06-18 Phase 7 完成**：LangGraph StateGraph + 15 nodes + 7 工具 + ContextBudgetManager + PolicyEngine（GUIDE §13.2 14 條 code-enforced）+ QAService + SSE API。356 tests 全綠 1.9s，每檔 ≤10，mypy 93 source files / 0 issues。chat_id 注入點：service layer → AgentState；工具 params 全 `extra="forbid"` 不含 chat_id；citations 經 PolicyEngine 雙層 isolation + ChatDocument association 驗證。
 
@@ -27,7 +30,7 @@
 | 5 | Enrichment | ✅ | ✅ | — | section / document / facts / manifest 完成；295 unit + 95 integration/eval 全綠；全 mock-LLM idempotent |
 | 6 | Vespa Retrieval | ✅ | ✅ mandatory | Retrieval /20 | 651 tests 全綠；app package/feed/RetrievalService(RRF+rerank)/eval harness 齊備；leakage=0 |
 | 7 | LangGraph Agent | ✅ | ✅ mandatory | Agent QA /20 | StateGraph + 15 nodes + 7 tools + PolicyEngine(14) + QAService + SSE API；356 全綠 |
-| 8 | Frontend | ⬜ | — | Frontend /10 | |
+| 8 | Frontend | ✅ | ✅（瀏覽器 smoke + lint/tc/build/test 全綠） | Frontend /10 | Next.js 15 / App Router；3 region 主介面 + Settings；SSE streaming；27 fe tests 每檔 ≤10 |
 | 9 | Evaluation & Repair | ⬜ | — | Provider /10 + Isolation /15 | |
 
 ---
@@ -89,11 +92,11 @@
 - ✅ 7.5 QAService（`run`/`stream` async generator）+ API（`POST /chats/{id}/sessions/{id}/messages`，SSE token/citation/done/error 事件 + disconnect-aware stop）+ messages 持久化（user+assistant 雙寫） + `session_service.list_messages` 隔離 + `NullRetrievalService` mock | general/sonnet ｜ `src/app/services/qa_service.py` + `src/app/api/messages.py` + `src/app/vespa/mock.py` + tests/unit/test_qa_service(8) + tests/integration/test_messages_api(8)
 
 ### Phase 8 — Frontend
-- ⬜ 8.1 骨架 + API client + types | general/sonnet
-- ⬜ 8.2 Chat Sidebar | general/sonnet
-- ⬜ 8.3 文件區 | general/sonnet
-- ⬜ 8.4 Session + Chat Interface | general/sonnet
-- ⬜ 8.5 Model Settings | general/sonnet
+- ✅ 8.1 骨架 + API client + types + TanStack Query + SSE helper（Next.js 15 App Router、React 19、Tailwind、Lucide、vitest） | general/sonnet ｜ `src/frontend/{app,components/layout,lib/api,lib/queries}/`；5 tests `lib/api/__tests__/sse.test.ts`
+- ✅ 8.2 Chat Sidebar（create/list/rename/delete、URL `?chatId=` state、doc count、`useCurrentChatId` hook） | general/sonnet ｜ `src/frontend/components/chat-sidebar/`、`lib/{queries/chats,hooks/useCurrentChatId,utils/time}.ts`；5 tests `time.test.ts`
+- ✅ 8.3 Documents Panel（upload XHR progress、PDF 50MB 前端驗證、status pill、manifest 整合、delete、TanStack key 隔離） | general/sonnet ｜ `src/frontend/components/documents/`、`lib/queries/documents.ts`；6 tests `StatusBadge.test.ts`
+- ✅ 8.4 Session + Chat Interface（SessionList CRUD、SSE streaming `useChatStream`、optimistic update、citations chip + modal、debug trace drawer、stop via AbortController、IME-safe Enter） | general/sonnet ｜ `src/frontend/components/{session,chat}/`、`lib/{chat/useChatStream,queries/sessions,hooks/useCurrentSessionId}.ts`；6 tests `useChatStream.test.tsx`
+- ✅ 8.5 Model Settings（`/settings` 路由 + 4 tab：Chat/Embedding/Reranker/Chat defaults；password-only key input + masked 顯示；localStorage adapter 暫代未實作的 `/provider_profiles` API；切換點：`NEXT_PUBLIC_USE_LOCAL_PROFILES`） | general/sonnet ｜ `src/frontend/app/settings/`、`components/settings/`、`lib/{api/providers,queries/providers,storage/local}.ts`；5 tests `providers.test.ts`
 
 ### Phase 9 — Evaluation & Repair
 - ⬜ 9.1 Golden QA cases + runner | general/sonnet
@@ -212,4 +215,9 @@
 | 依賴啟動 | `docker compose -f deploy/docker-compose.yml up -d postgres vespa` | 🟡 部分 | 2026-06-16 — local 5432 已被 `postgres-local` container 占用；改用既有容器並建立 `paper_notebook` DB（功能等效）；vespa 尚未起 |
 | Vespa deploy dry-run | `DATABASE_URL=... APP_ENCRYPTION_KEY=... uv run python scripts/deploy_vespa.py --dry-run` | ✅ | 2026-06-18 — 6 個檔案生成；tensor<float>(x[1024]) + 5 rank profiles 全包含 |
 | unit tests（含 Phase 6.1/6.3） | `uv run pytest tests/unit` | ✅ | 2026-06-18 — 342 綠（+25 新增 test_vespa_app_package） |
-| 前端 build | `npm --prefix src/frontend run build` | ⬜ | Phase 8 |
+| 前端 install | `npm --prefix src/frontend install` | ✅ | 2026-06-18 — Next.js 15.5.19 / React 19 / TanStack Query v5 / Tailwind 3.4 / vitest 4 |
+| 前端 lint | `npm --prefix src/frontend run lint` | ✅ | 2026-06-18 — 0 errors |
+| 前端 typecheck | `npm --prefix src/frontend run typecheck` | ✅ | 2026-06-18 — `tsc --noEmit` 0 errors |
+| 前端 build | `npm --prefix src/frontend run build` | ✅ | 2026-06-18 — `/`、`/settings` 兩條 static route |
+| 前端 test | `npm --prefix src/frontend run test` | ✅ | 2026-06-18 — 27 passed / 5 files，每檔 ≤10 |
+| 前端 smoke（dev server） | `npm --prefix src/frontend run dev` + `curl http://localhost:3000/` | ✅ | 2026-06-18 — port 3000 占用 → fallback 3002；`/` 三 region + `/settings` 渲染含 Chat/Embedding/Reranker/Chat defaults |

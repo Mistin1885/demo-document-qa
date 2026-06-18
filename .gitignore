@@ -34,3 +34,11 @@ artifacts/
 .env
 .env.*
 !.env.example
+
+# Frontend build artifacts & local env
+src/frontend/node_modules/
+src/frontend/.next/
+src/frontend/.env.local
+src/frontend/.env.development.local
+src/frontend/.env.test.local
+src/frontend/.env.production.local
