@@ -1,0 +1,42 @@
+# Keep the docker build context lean. Anything matched here is NOT sent to the
+# daemon, so it cannot accidentally land in the image either.
+
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Python build / cache
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+dist
+build
+*.egg-info
+
+# Frontend build / deps
+src/frontend/node_modules
+src/frontend/.next
+src/frontend/out
+src/frontend/.turbo
+
+# Data + artifacts (large; mounted as volumes at runtime)
+data/parsed
+data/storage
+data/sample
+artifacts
+output
+
+# Local env / secrets — NEVER ship into an image
+.env
+.env.*
+!.env.example
+
+# Reference material that isn't part of the app
+ref
+docs

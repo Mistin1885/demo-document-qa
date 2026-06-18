@@ -33,6 +33,65 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend/Dockerfile
+    image: paper-notebook-agent/backend:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vespa:
+        condition: service_started
+    environment:
+      # DB / Vespa are reachable by service name inside the compose network.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/paper_notebook
+      VESPA_ENDPOINT: http://vespa:8080
+      VESPA_ENABLED: "true"
+      # Encryption key — rotate in any real deployment.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dev-only-change-me-32-bytes-base64}
+      # MinerU vLLM server — runs on the host; from inside Linux containers,
+      # the host is reachable via `host.docker.internal` (added below) or
+      # set MINERU_SERVER_URL on the host before `docker compose up`.
+      MINERU_SERVER_URL: ${MINERU_SERVER_URL:-http://host.docker.internal:8001}
+      # Env-level fallback LLM (overridden per-chat by provider_profiles).
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
+      LLM_CONTEXT_WINDOW: ${LLM_CONTEXT_WINDOW:-10000}
+      # Allow the frontend container's browser-origin to call the API.
+      CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      APP_ENV: production
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist uploaded PDFs and MinerU output across restarts.
+      - backend_data:/app/data
+    extra_hosts:
+      # Lets the container reach the host's vLLM (MinerU @ :8001) on Linux.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend/Dockerfile
+      args:
+        # Inlined into the client bundle by Next at build time. Override with
+        # `NEXT_PUBLIC_API_BASE_URL=... docker compose build frontend`.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    image: paper-notebook-agent/frontend:latest
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   vespa_data:
+  backend_data:

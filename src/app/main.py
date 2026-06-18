@@ -22,6 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.config import get_settings
 from app.errors import (
     ChatDocumentAlreadyAssociated,
     ChatNotFound,
@@ -51,12 +52,14 @@ app = FastAPI(
 
 # CORS — Phase 8 frontend (Next.js dev server) calls the API directly.
 # In production behind a reverse proxy this list should be tightened or removed.
+_cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+_cors_extra = get_settings().cors_extra_origins.strip()
+if _cors_extra:
+    _cors_origins.extend(o.strip() for o in _cors_extra.split(",") if o.strip())
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

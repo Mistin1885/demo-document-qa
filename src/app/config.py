@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # --- Runtime environment ---
     app_env: Literal["development", "production", "test"] = "development"
 
+    # --- CORS ---
+    # Comma-separated list of extra allowed origins. Localhost dev origins are
+    # always allowed; this is for containerised / remote frontends.
+    cors_extra_origins: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -96,6 +96,109 @@ uv run python scripts/ingest_sample_arxiv.py     # downloads a small arXiv paper
 uv run python scripts/mineru_poc.py              # hybrid-http-client → data/parsed/
 ```
 
+### 4.4 Containerized startup (full stack via Docker Compose)
+
+The whole stack (Postgres + Vespa + FastAPI backend + Next.js frontend) is
+buildable from `deploy/docker-compose.yml`. Each service has its own image:
+
+| Service | Image | Source |
+|---|---|---|
+| `postgres` | `postgres:16-alpine` | upstream |
+| `vespa` | `vespaengine/vespa:8` | upstream |
+| `backend` | `paper-notebook-agent/backend:latest` | `deploy/backend/Dockerfile` (multi-stage, uv-managed) |
+| `frontend` | `paper-notebook-agent/frontend:latest` | `deploy/frontend/Dockerfile` (Next.js 15 standalone) |
+
+#### Prerequisites
+
+- Docker Engine ≥ 24 and Docker Compose v2.
+- A running **MinerU-compatible vLLM** on the host at `http://localhost:8001`
+  (see `deploy/mineru/README.md`). The backend container reaches it via
+  `host.docker.internal:8001` (mapped automatically through `extra_hosts`).
+- (Optional) a real LLM endpoint if you want non-mock answers — pass it
+  through the `LLM_*` env vars (see below).
+
+#### Build + start everything
+
+```bash
+# From repo root (the compose file's build context is the repo root):
+docker compose -f deploy/docker-compose.yml build
+docker compose -f deploy/docker-compose.yml up -d
+
+# Tail the logs of the app services
+docker compose -f deploy/docker-compose.yml logs -f backend frontend
+```
+
+On first start the backend container automatically runs
+`alembic upgrade head` against the `postgres` service before booting Uvicorn.
+Healthchecks gate the start order (`postgres` → `backend` → `frontend`).
+
+When all four services are healthy:
+
+- Frontend UI: <http://localhost:3000>
+- Backend API + OpenAPI docs: <http://localhost:8000/docs>
+- Vespa config / query endpoints: <http://localhost:19071>, <http://localhost:8080>
+- Postgres: `localhost:5432` (user `postgres`, db `paper_notebook`)
+
+#### Configuration (override via shell env or a `.env` next to compose)
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `APP_ENCRYPTION_KEY` | Fernet key for encrypting provider credentials. **Set this for any real use.** | `dev-only-change-me-32-bytes-base64` |
+| `MINERU_SERVER_URL` | MinerU hybrid VLM endpoint. | `http://host.docker.internal:8001` |
+| `LLM_PROVIDER` | `mock` / `openai_compatible` / `openai` / `gemini_native`. | `mock` |
+| `LLM_API_URL` / `LLM_MODEL` / `LLM_API_KEY` | Env-level fallback LLM used when a chat has no `default_chat_profile`. | empty |
+| `LLM_CONTEXT_WINDOW` | Context budget in tokens. | `10000` |
+| `NEXT_PUBLIC_API_BASE_URL` | **Build-time** URL the browser uses to reach the backend. Rebuild the frontend image after changing it. | `http://localhost:8000` |
+| `CORS_EXTRA_ORIGINS` | Comma-separated extra browser origins the backend will accept. | `http://localhost:3000,http://127.0.0.1:3000` |
+
+> If you expose the stack on a domain other than `localhost`, rebuild the
+> frontend image with the right base URL — Next inlines public env vars at
+> build time:
+> ```bash
+> NEXT_PUBLIC_API_BASE_URL=https://api.example.com \
+>   docker compose -f deploy/docker-compose.yml build frontend
+> ```
+
+#### One-shot deploy of the Vespa application package
+
+The `vespa` container ships empty. After it's healthy, push the schema:
+
+```bash
+uv run python scripts/deploy_vespa.py        # uses VESPA_ENDPOINT=http://localhost:8080
+```
+
+(You can also run the same script from inside the backend container with
+`docker compose exec backend uv run python scripts/deploy_vespa.py`.)
+
+#### Upload a PDF and ask a question from the UI
+
+Once the stack is up and the Vespa schema deployed:
+
+1. Open <http://localhost:3000>.
+2. **Settings → Providers** — register at least a Chat profile (or rely on
+   the env-level `LLM_*` fallback) and an Embedding profile. Connection tests
+   are exposed inline.
+3. **Chats → New chat** — every chat is its own isolation boundary
+   (CLAUDE.md §2). Pick a default chat profile.
+4. Inside the chat, **Documents → Upload**, drop in an arXiv PDF. The
+   backend streams it through MinerU (hybrid client → vLLM @ host:8001),
+   parses `middle.json` into `ParsedBlock`s, runs enrichment, and feeds
+   chunks + embeddings into Vespa under that `chat_id`.
+5. When ingestion shows "ready", open the **Chat** pane and ask a question.
+   The LangGraph agent will retrieve only over this chat's documents and
+   stream the answer over SSE, with citations back to the source pages.
+
+#### Stop / reset
+
+```bash
+docker compose -f deploy/docker-compose.yml down            # stop, keep data
+docker compose -f deploy/docker-compose.yml down -v         # also drop volumes
+```
+
+The `backend_data` volume holds uploaded PDFs (`/app/data/storage`) and
+MinerU output cache (`/app/data/parsed`); the `postgres_data` and
+`vespa_data` volumes hold their respective database state.
+
 ---
 
 ## 5. Running tests
