@@ -7,7 +7,9 @@
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 > **測試密度上限：每個 test 檔 ≤10 個測試項（詳見 `CLAUDE.md §12.1`）。**
 
-最後更新：2026-06-18 ｜ 當前 Phase：_Phase 6 完成 + 測試套件瘦身（651 → 270 items，每檔 ≤10 全綠）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 6 Vespa Retrieval /20 mandatory PASS_
+最後更新：2026-06-18 ｜ 當前 Phase：_Phase 7 完成（LangGraph Agent 全綠 / Agent QA /20 mandatory PASS）_ ｜ 累計 Goal Score：_Parsing /15 + Vespa Retrieval /20 + Agent QA /20 mandatory ALL PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment_
+
+> **2026-06-18 Phase 7 完成**：LangGraph StateGraph + 15 nodes + 7 工具 + ContextBudgetManager + PolicyEngine（GUIDE §13.2 14 條 code-enforced）+ QAService + SSE API。356 tests 全綠 1.9s，每檔 ≤10，mypy 93 source files / 0 issues。chat_id 注入點：service layer → AgentState；工具 params 全 `extra="forbid"` 不含 chat_id；citations 經 PolicyEngine 雙層 isolation + ChatDocument association 驗證。
 
 > **2026-06-18 測試瘦身**：依使用者要求「每功能 ≤10 測試項」，將測試從 651 精簡至 **270**（-58.5%），全綠 1.6 秒。規則正式寫入 `CLAUDE.md §12.1` 與 `DEVELOPMENT_PLAN.md` A.3 sub-agent prompt 模板，未來新增測試 / phase 必須遵守，違反 = 驗收不過。涵蓋率不退步：所有 mandatory gate（chat/session isolation、citation、parsing、hybrid retrieval、provider）測試全部保留。
 
@@ -24,7 +26,7 @@
 | 4 | Document Parsing Pipeline（MinerU 整合） | ✅ | ✅ mandatory | Parsing /15 | 312 tests 全綠；client / mapping / hierarchy / eval harness 齊備；LightRAG real-data PASS |
 | 5 | Enrichment | ✅ | ✅ | — | section / document / facts / manifest 完成；295 unit + 95 integration/eval 全綠；全 mock-LLM idempotent |
 | 6 | Vespa Retrieval | ✅ | ✅ mandatory | Retrieval /20 | 651 tests 全綠；app package/feed/RetrievalService(RRF+rerank)/eval harness 齊備；leakage=0 |
-| 7 | LangGraph Agent | ⬜ | — | Agent QA /20 | mandatory |
+| 7 | LangGraph Agent | ✅ | ✅ mandatory | Agent QA /20 | StateGraph + 15 nodes + 7 tools + PolicyEngine(14) + QAService + SSE API；356 全綠 |
 | 8 | Frontend | ⬜ | — | Frontend /10 | |
 | 9 | Evaluation & Repair | ⬜ | — | Provider /10 + Isolation /15 | |
 
@@ -80,11 +82,11 @@
 - ✅ 6.5 Retrieval eval harness（Recall@k / MRR / nDCG@k / cross-chat leakage；EvalReport typed Pydantic；FakeVespa transport deterministic；5 mode 比較；mandatory gate：leakage=0 ＆ hybrid≥單一 retriever ＆ rerank 不退步；exit code 反映 gate） | general/sonnet ｜ `src/app/evaluation/retrieval_eval.py` + `scripts/run_retrieval_eval.py` + `data/fixtures/retrieval/{corpus,eval_cases}.json` + `tests/evaluation/test_retrieval_eval.py`（49 綠）；最終報告 `artifacts/evaluation/retrieval-report.{json,md}` 全 mode recall@10=1.0 / leakage=0 / gate PASS
 
 ### Phase 7 — LangGraph Agent
-- ⬜ 7.1 AgentState + ContextBudget | general/sonnet
-- ⬜ 7.2 7 個工具 | general/sonnet
-- ⬜ 7.3 StateGraph 節點 | general/sonnet
-- ⬜ 7.4 Policy 強制層 + citation/scope validation | general/sonnet
-- ⬜ 7.5 QA service + API（SSE） | general/sonnet
+- ✅ 7.1 AgentState（Pydantic v2, `extra="forbid"`, 16 sub-models, `tool_invocations_fingerprints` set↔list shim, `add_evidence`/`record_tool_call`/`record_event` helpers, `make_evidence_id` deterministic uuid5）+ ContextBudgetManager（tiktoken + fallback 旗標、`detect_overflow`/`build_aggregation_groups`/`select_compact_sources`） | general/sonnet ｜ `src/app/agent/{state,budget}.py` + tests/unit/{test_agent_state(7),test_agent_budget(8)}
+- ✅ 7.2 7 個工具（inspect_chat / inspect_document / fetch_structural_nodes / search_hybrid / query_structured_facts / aggregate_sources / expand_evidence；params 全 `extra="forbid"` 且**不含 chat_id**；`TOOL_REGISTRY` + `ToolSpec`；deterministic aggregate placeholder for Phase 9 LLM swap） | general/sonnet ｜ `src/app/agent/tools/`（11 檔）+ tests/unit/{test_agent_tools(10),test_agent_tools_isolation(9)}
+- ✅ 7.3 StateGraph（LangGraph 0.x；以 `TypedDict{state}` 包 `AgentState` 為 single source of truth；15 nodes 含 planner/coverage/gap retrieval/overflow→aggregate；`InMemoryMessageStore` Protocol） | general/sonnet ｜ `src/app/agent/{graph.py,nodes/}` + tests/unit/test_agent_graph(10) + tests/integration/test_agent_graph_e2e(10)
+- ✅ 7.4 PolicyEngine（GUIDE §13.2 14 條全 code-enforced；`enforce_pre_retrieval/post_retrieval/pre_answer/answer/citations/provider_result`；replaces graph stub nodes）+ citation/scope validation（policies 12/13 含 ChatDocument association 驗證） | general/sonnet ｜ `src/app/agent/policies.py` + 5 nodes 改寫 + tests/unit/test_agent_policies(10) + tests/integration/test_agent_policies_in_graph(6)
+- ✅ 7.5 QAService（`run`/`stream` async generator）+ API（`POST /chats/{id}/sessions/{id}/messages`，SSE token/citation/done/error 事件 + disconnect-aware stop）+ messages 持久化（user+assistant 雙寫） + `session_service.list_messages` 隔離 + `NullRetrievalService` mock | general/sonnet ｜ `src/app/services/qa_service.py` + `src/app/api/messages.py` + `src/app/vespa/mock.py` + tests/unit/test_qa_service(8) + tests/integration/test_messages_api(8)
 
 ### Phase 8 — Frontend
 - ⬜ 8.1 骨架 + API client + types | general/sonnet
@@ -107,10 +109,10 @@
 |---|---|---|
 | Chat isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_chat_documents.py` + `test_isolation_chat_sessions.py` + `test_isolation_api_scope.py`；Phase 6 接 Vespa 後再驗 retrieval-side filter |
 | Session isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_session_history_service.py` + `tests/unit/test_isolation_service_filters.py`；Phase 7 接 message API 後再驗 endpoint scope |
-| Vespa hybrid retrieval | ⬜ | |
-| Citations | ⬜ | |
+| Vespa hybrid retrieval | ✅ PASS | `tests/unit/test_retrieval_*` + `tests/integration/test_retrieval_isolation.py`；`artifacts/evaluation/retrieval-report.{json,md}` |
+| Citations | ✅ PASS | PolicyEngine policies 12/13 + `tests/integration/test_agent_policies_in_graph.py`（cross-chat citation 攔截、ChatDocument association 驗證）|
 | arXiv parsing (MinerU) | ✅ PASS | `artifacts/evaluation/{mineru-poc.md, parser-report.{json,md}}`；Phase 4 harness 對 LightRAG real-data gate PASS |
-| LangGraph QA | ⬜ | |
+| LangGraph QA | ✅ PASS | `tests/integration/test_agent_graph_e2e.py` + `test_agent_policies_in_graph.py` + `test_messages_api.py`；StateGraph + 14 policies + SSE 全綠 |
 | Provider settings | 🟡 抽象 + mock 完成 | `src/app/providers/` + `tests/unit/test_providers.py` 49 綠 |
 
 ---
@@ -171,6 +173,10 @@
 - 2026-06-18｜Phase 6.3 second-phase 表達限制：pyvespa `RankProfile(second_phase=SecondPhaseRanking(expression=...))` 完整支援，無需 raw text fallback；`hybrid_with_native_rerank` inherits `hybrid_first_phase` 並覆寫 second_phase，測試確認繼承關係正確寫入 .sd｜`src/app/vespa/app_package.py`
 - 2026-06-18｜Phase 6.1 services.xml container 命名：pyvespa 預設生成 `id="documentchunk_container"` / `id="documentchunk_content"`，不符合 spec（`default` / `documents`）；已在 `write_application_files` step 2 手動覆寫為正確名稱｜`src/app/vespa/app_package.py::_services_xml`
 - 2026-06-18｜Phase 5.4 ChatManifest 為 **read-time computed**（GUIDE §8.3，不在 ingestion 階段預先產生 Chat-wide summary）；authors 從 Phase 4.3 hierarchy `node_type="authors"` 節點 content 切字（`,;\n` + ` and `），`Document` ORM 不擴新欄位；`Document.title` 退路為 `node_type="document"` 的 root DocumentNode title｜`src/app/enrichment/manifest.py`
+- 2026-06-18｜Phase 7.3 LangGraph state schema：以 `TypedDict{state: dict[str, Any]}` 包裝 `AgentState`（單一事實源），每 node 進場 `AgentState.model_validate(container["state"])` / 出場回 `{"state": merged_dump}`；LangGraph 對 BaseModel state 在當前版本支援不全，TypedDict shim 為最小入侵變通｜`src/app/agent/graph.py`、`nodes/*`
+- 2026-06-18｜Phase 7.2 `aggregate_sources` 工具用 **deterministic placeholder**（content join + truncate），不引入 LLM 依賴；Phase 9 可替換為 provider LLM aggregation｜`src/app/agent/tools/aggregate_sources.py`
+- 2026-06-18｜Phase 7.4 PolicyEngine：6 個 `enforce_*` 方法分別在 graph 不同階段呼叫（pre_retrieval / post_retrieval / pre_answer / answer / citations / provider_result）；policy 5/10/3/4 為 **silently degrade**（自動改寫 plan / rerank_mode）；policy 9/14 為 **raise PolicyViolation**；違規一律 `state.record_event(kind="policy_violation", ...)` 留 audit trail｜`src/app/agent/policies.py`
+- 2026-06-18｜Phase 7.5 SSE 不引入 `sse-starlette`，自寫 `event: <kind>\ndata: <json>\n\n` yield；stop generation 採 disconnect-aware（`request.is_disconnected()` + `asyncio.Event`）而非單獨 `/stop` endpoint，符合 SSE 標準做法、測試容易 monkeypatch｜`src/app/api/messages.py`、`src/app/services/qa_service.py`
 - 2026-06-18｜**測試密度上限：每個 test 檔最多 10 個測試項**（含 parametrize 展開）。把 Phase 1-6 累積的 651 個測試精簡到 270 個（-58.5%），全程依「契約 > 列舉」原則：mandatory invariants 全保留、列舉用 parametrize 留代表性 2-3 case、刪除 `__repr__` / type-only / 重複覆蓋。規則寫入 `CLAUDE.md §12.1`，`DEVELOPMENT_PLAN.md` A.3 sub-agent prompt 模板加入「測試要求」段落，未來 phase 7-9 與所有 sub-agent 一律遵守。理由：原本測試膨脹只增加迭代成本，不增加 signal；mandatory gate（chat/session isolation、citation、provider、parsing、hybrid retrieval）的覆蓋一個沒少｜`CLAUDE.md §12.1`、`DEVELOPMENT_PLAN.md §A.3`、`tests/`
 
 ---
@@ -192,12 +198,12 @@
 | import 健檢 | `uv run python -c "import app"` | ✅ | 2026-06-16 |
 | MinerU PoC | `uv run mineru -p data/2410.05779v3.pdf -o data/parsed -b hybrid-http-client -u http://localhost:8001` | ✅ | gate_pass=true；`scripts/mineru_poc.py` 可重跑 |
 | lint | `uv run ruff check src/app tests migrations scripts` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
-| 型別 | `uv run mypy src/app` | ✅ | 2026-06-17 — 49 source files, 0 issues |
-| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-18 — 瘦身後 213 綠（從 ~530 削減；每檔 ≤10） |
-| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-18 — 瘦身後 42 綠（chats/sessions/documents + 全部 isolation 保留 + facts_api + manifest_api） |
-| 評估測試 | `uv run pytest tests/evaluation` | ✅（parser + retrieval harness） | 2026-06-18 — 瘦身後 15 綠（parser_eval 9 + retrieval_eval 6，所有 mandatory gate 保留） |
-| 全套測試 | `uv run pytest -q` | ✅ | 2026-06-18 — **270 passed in 1.6s**；總數從 651 精簡 58.5% |
-| 每檔密度檢查 | `uv run pytest --collect-only -q \| awk -F'::' '/::/{print $1}' \| sort \| uniq -c \| sort -rn \| head` | ✅ | 2026-06-18 — max_per_file=10，36 個 test 檔全部 ≤10 |
+| 型別 | `uv run mypy src/app` | ✅ | 2026-06-18 — 93 source files, 0 issues（含 Phase 7 全部 agent / qa_service / messages api） |
+| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-18 — Phase 7 完成後 ~277 綠（+ agent state/budget/tools/graph/policies/qa_service；每檔 ≤10） |
+| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-18 — Phase 7 完成後 ~64 綠（+ agent_graph_e2e / agent_policies_in_graph / messages_api） |
+| 評估測試 | `uv run pytest tests/evaluation` | ✅ | 2026-06-18 — 15 綠（不變） |
+| 全套測試 | `uv run pytest -q` | ✅ | 2026-06-18 — **356 passed in 1.9s**（Phase 7 +86 items；仍每檔 ≤10） |
+| 每檔密度檢查 | `uv run pytest --collect-only -q \| awk -F'::' '/::/{print $1}' \| sort \| uniq -c \| sort -rn \| head` | ✅ | 2026-06-18 — max_per_file=10，全部 test 檔 ≤10 |
 | Parser eval（real data, LightRAG） | `uv run python scripts/run_parser_eval.py` | ✅ PASS | `artifacts/evaluation/parser-report.{json,md}`；H-F1=0.333、math-recall=1.0、refs=21、figs=6、tables=6、eqs=2 |
 | Alembic upgrade | `uv run alembic upgrade head` | ✅ | 2026-06-16 — revision `b5b02bc9d209`；11 張表（10 + alembic_version）建立 |
 | Alembic round-trip | `uv run alembic downgrade base && uv run alembic upgrade head` | ✅ | 2026-06-16 — 雙向可重跑 |

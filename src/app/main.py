@@ -131,6 +131,7 @@ from app.api import chats  # noqa: E402,I001
 from app.api import documents  # noqa: E402,I001
 from app.api import facts  # noqa: E402,I001
 from app.api import manifest  # noqa: E402,I001
+from app.api import messages  # noqa: E402,I001
 from app.api import sessions  # noqa: E402,I001
 
 app.include_router(chats.router, prefix="/chats", tags=["chats"])
@@ -153,6 +154,11 @@ app.include_router(
     manifest.router,
     prefix="/chats/{chat_id}/manifest",
     tags=["manifest"],
+)
+app.include_router(
+    messages.router,
+    prefix="/chats/{chat_id}/sessions/{session_id}/messages",
+    tags=["messages"],
 )
 
 

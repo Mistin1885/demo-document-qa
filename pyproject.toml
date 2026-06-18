@@ -10,6 +10,8 @@ dependencies = [
     "cryptography>=49.0.0",
     "google-genai>=2.8.0",
     "httpx>=0.28.1",
+    "langchain-core>=1.4.7",
+    "langgraph>=1.2.5",
     "mineru[pipeline]>=3.3.1",
     "openai>=2.41.1",
     "psycopg[binary]>=3.3.4",
@@ -17,6 +19,7 @@ dependencies = [
     "pyvespa>=0.50",
     "six>=1.17.0",
     "sqlalchemy[asyncio]>=2.0.51",
+    "tiktoken>=0.13.0",
 ]
 
 [dependency-groups]

@@ -25,8 +25,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import ChatNotFound, SessionNotFound
-from app.models.domain import SessionCreate, SessionRead, SessionUpdate
-from app.models.orm import Chat
+from app.models.domain import MessageRead, SessionCreate, SessionRead, SessionUpdate
+from app.models.orm import Chat, Message
 from app.models.orm import Session as SessionORM
 
 
@@ -177,10 +177,47 @@ async def delete_session(
     await db.flush()
 
 
+async def list_messages(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    chat_id: uuid.UUID,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[MessageRead]:
+    """Return messages for ``session_id`` scoped to ``chat_id``.
+
+    The query joins through ``Session`` to verify ``Session.chat_id == chat_id``,
+    ensuring session history from a different chat cannot be read.
+
+    Raises
+    ------
+    SessionNotFound
+        If the session does not exist within ``chat_id``.
+    """
+    # Verify scope first (raises SessionNotFound if absent or wrong chat)
+    await _require_session(db, chat_id=chat_id, session_id=session_id)
+
+    stmt = (
+        select(Message)
+        .join(SessionORM, SessionORM.id == Message.session_id)
+        .where(
+            Message.session_id == session_id,
+            SessionORM.chat_id == chat_id,
+        )
+        .order_by(Message.created_at)
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await db.scalars(stmt)).all()
+    return [MessageRead.model_validate(row) for row in rows]
+
+
 __all__ = [
     "create_session",
     "get_session_by_id",
     "list_sessions",
     "update_session",
     "delete_session",
+    "list_messages",
 ]
