@@ -26,13 +26,22 @@ from collections.abc import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.db import get_session
 from app.errors import ChatNotFound, SessionNotFound
 from app.models.domain import MessageRead
+from app.models.orm import Chat as ChatORM
+from app.models.orm import ProviderProfile as ProviderProfileORM
+from app.providers.base import ChatProvider, EmbeddingProvider
 from app.providers.mock import MockChatProvider
+from app.providers.registry import build_chat_provider, build_embedding_provider
+from app.retrieval.service import RetrievalService
 from app.services.qa_service import QAService
+from app.vespa.mock import NullRetrievalService
 
 router = APIRouter()
 
@@ -61,6 +70,89 @@ class MessageRequest(BaseModel):
 
 def _not_found(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
+# ---------------------------------------------------------------------------
+# Provider helpers — load real providers from Chat.default_*_profile
+# ---------------------------------------------------------------------------
+
+
+def _profile_as_like(p: ProviderProfileORM, embedding_dim: int) -> object:
+    """Shim ORM ProviderProfile to the ProviderProfileLike structural protocol.
+
+    The registry protocol uses ``model_name`` / ``provider_name`` / ``api_key_plain``
+    / ``embedding_dim``; the ORM uses ``model`` / ``name`` / no plain key.
+    """
+    from types import SimpleNamespace  # noqa: PLC0415
+    return SimpleNamespace(
+        provider_type=p.provider_type,
+        model_name=p.model,
+        api_key_encrypted=p.api_key_encrypted,
+        api_key_plain=None,
+        base_url=p.base_url,
+        context_window=p.context_window,
+        embedding_dim=embedding_dim,
+        provider_name=p.name,
+    )
+
+
+async def _load_chat(db: AsyncSession, chat_id: uuid.UUID) -> ChatORM | None:
+    """Load Chat with provider profile relationships eagerly (one query)."""
+    stmt = (
+        select(ChatORM)
+        .where(ChatORM.id == chat_id)
+        .options(
+            selectinload(ChatORM.default_chat_profile),
+            selectinload(ChatORM.default_embedding_profile),
+        )
+    )
+    return (await db.scalars(stmt)).first()
+
+
+async def _build_providers(
+    db: AsyncSession, chat_id: uuid.UUID
+) -> tuple[ChatProvider, RetrievalService | NullRetrievalService]:
+    """Return (chat_provider, retrieval_service) for this chat.
+
+    Falls back to MockChatProvider / NullRetrievalService when:
+    - the chat has no default provider profile configured, OR
+    - ``vespa_enabled=False`` in settings (for the retrieval service).
+    """
+    settings = get_settings()
+    chat_orm = await _load_chat(db, chat_id)
+
+    # --- chat (LLM) provider ---
+    chat_prov: ChatProvider
+    if chat_orm is not None and chat_orm.default_chat_profile is not None:
+        try:
+            profile_like = _profile_as_like(chat_orm.default_chat_profile, settings.embedding_dim)
+            chat_prov = build_chat_provider(profile_like)  # type: ignore[arg-type]
+        except Exception:
+            chat_prov = MockChatProvider()
+    else:
+        chat_prov = MockChatProvider()
+
+    # --- retrieval service (Vespa + embedding provider) ---
+    retrieval_svc: RetrievalService | NullRetrievalService
+    if (
+        settings.vespa_enabled
+        and chat_orm is not None
+        and chat_orm.default_embedding_profile is not None
+    ):
+        try:
+            emb_like = _profile_as_like(chat_orm.default_embedding_profile, settings.embedding_dim)
+            emb_prov: EmbeddingProvider = build_embedding_provider(emb_like)  # type: ignore[arg-type]
+            retrieval_svc = RetrievalService(
+                endpoint=settings.vespa_endpoint,
+                embedding_provider=emb_prov,
+                embedding_dim=settings.embedding_dim,
+            )
+        except Exception:
+            retrieval_svc = NullRetrievalService()
+    else:
+        retrieval_svc = NullRetrievalService()
+
+    return chat_prov, retrieval_svc
 
 
 def _sse_line(kind: str, data: object) -> str:
@@ -105,14 +197,12 @@ async def post_message(
     except ChatNotFound as exc:
         raise _not_found(str(exc)) from exc
 
-    # Build service + provider
+    # Build real providers from chat's configured profiles (fallback to mocks)
     from app.db import _get_sessionmaker  # noqa: PLC0415
-    from app.vespa.mock import NullRetrievalService  # noqa: PLC0415
 
+    chat_provider, retrieval_service = await _build_providers(db, chat_id)
     session_factory = _get_sessionmaker()
-    retrieval_service = NullRetrievalService()
     qa_service = QAService(session_factory=session_factory, retrieval_service=retrieval_service)
-    chat_provider = MockChatProvider()
 
     # ------------------------------------------------------------------
     # Streaming path
