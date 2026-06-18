@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.budget import ContextBudgetManager
 from app.agent.graph import build_graph
-from app.agent.state import AgentState, CitationDraft, ConversationTurn
+from app.agent.state import AgentState, CitationDraft, ConversationTurn, GenerationConfig
 from app.errors import ChatNotFound, SessionNotFound
 from app.models.domain import Citation, QAResponse, ToolTrace, ToolTraceStep
 from app.models.orm import Message
@@ -291,6 +291,7 @@ class QAService:
         chat_id: uuid.UUID,
         session_id: uuid.UUID,
         question: str,
+        generation_config: GenerationConfig | None = None,
     ) -> AgentState:
         """Validate ownership, load history, and build AgentState."""
         # Validate session belongs to chat (raises SessionNotFound if not)
@@ -305,6 +306,7 @@ class QAService:
             session_id=session_id,
             question=question,
             conversation_history=history,
+            generation_config=generation_config or GenerationConfig(),
         )
 
     # ------------------------------------------------------------------
@@ -321,6 +323,7 @@ class QAService:
         budget_manager: ContextBudgetManager | None = None,
         stop_event: asyncio.Event | None = None,
         include_debug_trace: bool = False,
+        generation_config: GenerationConfig | None = None,
     ) -> QAResponse:
         """Run the full agent graph synchronously and return a QAResponse.
 
@@ -345,7 +348,11 @@ class QAService:
 
         async with self._session_factory() as db:
             initial_state = await self._build_initial_state(
-                db, chat_id=chat_id, session_id=session_id, question=question
+                db,
+                chat_id=chat_id,
+                session_id=session_id,
+                question=question,
+                generation_config=generation_config,
             )
 
         # Build ToolDeps
@@ -360,7 +367,14 @@ class QAService:
             session_factory=_session_ctx,
         )
 
-        bm = budget_manager or ContextBudgetManager()
+        # Budget manager: caller may pass an explicit one, otherwise honour
+        # generation_config.context_window if present, else default 10k.
+        if budget_manager is not None:
+            bm = budget_manager
+        elif generation_config is not None and generation_config.context_window is not None:
+            bm = ContextBudgetManager(default_context_window=generation_config.context_window)
+        else:
+            bm = ContextBudgetManager()
 
         # Use InMemoryMessageStore in graph — we persist ourselves after
         from app.agent.nodes.persist_messages import InMemoryMessageStore  # noqa: PLC0415
@@ -427,6 +441,7 @@ class QAService:
         chat_provider: ChatProvider,
         budget_manager: ContextBudgetManager | None = None,
         stop_event: asyncio.Event | None = None,
+        generation_config: GenerationConfig | None = None,
     ) -> AsyncIterator[QAStreamEvent]:
         """Run the agent and yield SSE events.
 
@@ -443,7 +458,11 @@ class QAService:
         try:
             async with self._session_factory() as db:
                 initial_state = await self._build_initial_state(
-                    db, chat_id=chat_id, session_id=session_id, question=question
+                    db,
+                    chat_id=chat_id,
+                    session_id=session_id,
+                    question=question,
+                    generation_config=generation_config,
                 )
         except (ChatNotFound, SessionNotFound) as exc:
             yield QAStreamEvent(
@@ -466,7 +485,12 @@ class QAService:
             chat_provider=chat_provider,
             session_factory=_session_ctx,
         )
-        bm = budget_manager or ContextBudgetManager()
+        if budget_manager is not None:
+            bm = budget_manager
+        elif generation_config is not None and generation_config.context_window is not None:
+            bm = ContextBudgetManager(default_context_window=generation_config.context_window)
+        else:
+            bm = ContextBudgetManager()
 
         from app.agent.nodes.persist_messages import InMemoryMessageStore  # noqa: PLC0415
 

@@ -22,6 +22,7 @@
  */
 
 import { API_BASE_URL, ApiError } from "./client";
+import type { GenerationOverrides } from "./messages";
 import type { SSEEvent } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -64,14 +65,15 @@ export async function* streamMessage(
   chatId: string,
   sessionId: string,
   question: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  overrides: GenerationOverrides = {}
 ): AsyncIterable<SSEEvent> {
   const url = `${API_BASE_URL}/chats/${chatId}/sessions/${sessionId}/messages`;
 
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, stream: true }),
+    body: JSON.stringify({ question, stream: true, ...overrides }),
     signal,
   });
 

@@ -13,10 +13,14 @@
  */
 
 import { Suspense } from "react";
+
+import { SessionList } from "@/components/session/SessionList";
+import { useChatStream } from "@/lib/chat/useChatStream";
+import { useGenerationPrefs } from "@/lib/chat/useGenerationPrefs";
 import { useCurrentChatId } from "@/lib/hooks/useCurrentChatId";
 import { useCurrentSessionId } from "@/lib/hooks/useCurrentSessionId";
-import { useChatStream } from "@/lib/chat/useChatStream";
-import { SessionList } from "@/components/session/SessionList";
+
+import { GenerationPrefsPanel } from "./GenerationPrefsPanel";
 import { MessageList } from "./MessageList";
 import { QuestionInput } from "./QuestionInput";
 
@@ -28,9 +32,11 @@ function ChatPanelInner() {
   const { chatId } = useCurrentChatId();
   const { sessionId } = useCurrentSessionId();
 
+  const { prefs, setPrefs, reset: resetPrefs } = useGenerationPrefs(chatId);
   const { messages, sendMessage, stop, isStreaming, error } = useChatStream(
     chatId,
-    sessionId
+    sessionId,
+    prefs
   );
 
   const ready = !!chatId && !!sessionId;
@@ -71,6 +77,14 @@ function ChatPanelInner() {
 
           {/* Message thread */}
           <MessageList messages={messages} />
+
+          {/* Advanced generation overrides */}
+          <GenerationPrefsPanel
+            prefs={prefs}
+            onChange={setPrefs}
+            onReset={resetPrefs}
+            disabled={isStreaming}
+          />
 
           {/* Input */}
           <QuestionInput

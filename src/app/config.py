@@ -71,8 +71,15 @@ class Settings(BaseSettings):
     llm_model: str | None = None
     llm_api_key: SecretStr | None = None
     llm_max_tokens: int = 2048
+    """Max output tokens for the answer call (used when the request body
+    leaves ``max_answer_tokens`` unset). Frontend may override per-request."""
+
     llm_temperature: float = 0.0
     llm_timeout: float = 60.0
+    llm_context_window: int = 10_000
+    """Total input-side token budget (system + history + plan + evidence +
+    answer_reserve). Drives ``ContextBudgetManager`` when no per-request
+    override is supplied."""
 
     # --- Vespa embedding dimension (Phase 6 schema DIM) ---
     embedding_dim: int = 1024

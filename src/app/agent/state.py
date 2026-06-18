@@ -247,6 +247,26 @@ class AgentError(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class GenerationConfig(BaseModel):
+    """Per-request overrides for the LLM call in ``generate_answer``.
+
+    All fields are optional; ``None`` means "use provider/env default".
+    These are propagated by the service layer from the request body, never
+    set by the LLM or the agent itself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_answer_tokens: int | None = Field(default=None, ge=1, le=32_768)
+    """Cap on output tokens for the answer call (maps to ``complete(max_tokens=...)``)."""
+
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    """Sampling temperature for the answer call."""
+
+    context_window: int | None = Field(default=None, ge=1_000, le=200_000)
+    """Total input token budget — drives ``ContextBudgetManager`` size."""
+
+
 class TraceEvent(BaseModel):
     """One append-only event in the agent debug trace.
 
@@ -365,6 +385,9 @@ class AgentState(BaseModel):
     # --- Token estimate flag (GUIDE §14) ---
     token_count_is_estimate: bool = False
 
+    # --- Per-request generation overrides (from MessageRequest body) ---
+    generation_config: GenerationConfig = Field(default_factory=GenerationConfig)
+
     # ------------------------------------------------------------------
     # Serialisation shim: set[str] ↔ list[str]
     # ------------------------------------------------------------------
@@ -469,6 +492,7 @@ __all__ = [
     "CoverageRequirement",
     "DocumentManifest",
     "EvidenceItem",
+    "GenerationConfig",
     "StructuredFactSnapshot",
     "ToolCallRecord",
     "TraceEvent",

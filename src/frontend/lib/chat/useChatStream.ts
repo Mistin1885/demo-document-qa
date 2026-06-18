@@ -18,9 +18,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { GenerationOverrides } from "@/lib/api/messages";
 import { streamMessage } from "@/lib/api/sse";
-import { useSessionMessages } from "@/lib/queries/sessions";
 import { queryKeys } from "@/lib/queries/keys";
+import { useSessionMessages } from "@/lib/queries/sessions";
 import type { Citation, MessageRead, QAResponse } from "@/lib/api/types";
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,9 @@ export type ChatMessage =
 export interface UseChatStreamReturn {
   /** All messages: server history + optimistic user msg + in-flight assistant. */
   messages: ChatMessage[];
-  sendMessage: (question: string) => void;
+  /** Send a question; optional per-call generation overrides take precedence
+   *  over the hook's default `overrides` arg. */
+  sendMessage: (question: string, overrides?: GenerationOverrides) => void;
   stop: () => void;
   isStreaming: boolean;
   error: string | null;
@@ -78,7 +81,8 @@ function tempId(): string {
 
 export function useChatStream(
   chatId: string | null,
-  sessionId: string | null
+  sessionId: string | null,
+  defaultOverrides: GenerationOverrides = {}
 ): UseChatStreamReturn {
   const queryClient = useQueryClient();
 
@@ -125,8 +129,15 @@ export function useChatStream(
     setIsStreaming(false);
   }, []);
 
+  // Keep the latest defaults in a ref so the stable `sendMessage` identity
+  // (used as a dependency in MessageList) doesn't churn on every prefs edit.
+  const overridesRef = useRef<GenerationOverrides>(defaultOverrides);
+  useEffect(() => {
+    overridesRef.current = defaultOverrides;
+  }, [defaultOverrides]);
+
   const sendMessage = useCallback(
-    (question: string) => {
+    (question: string, perCallOverrides?: GenerationOverrides) => {
       if (!chatId || !sessionId) return;
       if (isStreaming) return; // prevent double-send
 
@@ -160,6 +171,10 @@ export function useChatStream(
       // 3. Start SSE
       const abort = new AbortController();
       abortRef.current = abort;
+      const overrides: GenerationOverrides = {
+        ...overridesRef.current,
+        ...(perCallOverrides ?? {}),
+      };
 
       void (async () => {
         try {
@@ -167,7 +182,8 @@ export function useChatStream(
             chatId,
             sessionId,
             question,
-            abort.signal
+            abort.signal,
+            overrides
           )) {
             if (abort.signal.aborted) break;
 

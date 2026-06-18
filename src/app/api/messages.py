@@ -25,11 +25,12 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agent.state import GenerationConfig
 from app.config import get_settings
 from app.db import get_session
 from app.errors import ChatNotFound, SessionNotFound
@@ -56,12 +57,39 @@ class MessageRequest(BaseModel):
     """Request body for POST /messages.
 
     ``extra="forbid"`` ensures unknown fields return HTTP 422.
+
+    Generation overrides (all optional — fall back to env-level ``LLM_*``
+    settings when omitted):
+      - ``max_answer_tokens``: cap on output tokens (use to avoid truncated
+        long summaries; provider hard ceiling still applies).
+      - ``temperature``: sampling temperature for the answer.
+      - ``context_window``: total input budget; resizes the
+        ``ContextBudgetManager`` proportionally so more evidence can fit.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     question: str
     stream: bool = True
+    max_answer_tokens: int | None = Field(default=None, ge=1, le=32_768)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    context_window: int | None = Field(default=None, ge=1_000, le=200_000)
+
+
+def _generation_config_from_request(body: MessageRequest) -> GenerationConfig:
+    """Build a GenerationConfig from request body + env-level fallbacks."""
+    settings = get_settings()
+    return GenerationConfig(
+        max_answer_tokens=body.max_answer_tokens
+        if body.max_answer_tokens is not None
+        else settings.llm_max_tokens,
+        temperature=body.temperature
+        if body.temperature is not None
+        else settings.llm_temperature,
+        context_window=body.context_window
+        if body.context_window is not None
+        else settings.llm_context_window,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +273,7 @@ async def post_message(
     chat_provider, retrieval_service = await _build_providers(db, chat_id)
     session_factory = _get_sessionmaker()
     qa_service = QAService(session_factory=session_factory, retrieval_service=retrieval_service)
+    gen_cfg = _generation_config_from_request(body)
 
     # ------------------------------------------------------------------
     # Streaming path
@@ -259,6 +288,7 @@ async def post_message(
                 body.question,
                 chat_provider=chat_provider,
                 stop_event=stop_event,
+                generation_config=gen_cfg,
             ):
                 # Check client disconnect between events
                 if await request.is_disconnected():
@@ -285,6 +315,7 @@ async def post_message(
             session_id,
             body.question,
             chat_provider=chat_provider,
+            generation_config=gen_cfg,
         )
     except SessionNotFound as exc:
         raise _not_found(str(exc)) from exc

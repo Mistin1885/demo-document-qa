@@ -102,9 +102,17 @@ async def generate_answer(state: AgentState, chat_provider: ChatProvider) -> dic
         ChatMessage(role="user", content=f"{context_block}\n\nQuestion: {state.question}"),
     ]
 
+    # Per-request overrides (frontend may bump max_tokens for long summaries).
+    gen_cfg = state.generation_config
+    complete_kwargs: dict[str, Any] = {
+        "temperature": 0.0 if gen_cfg.temperature is None else gen_cfg.temperature,
+    }
+    if gen_cfg.max_answer_tokens is not None:
+        complete_kwargs["max_tokens"] = gen_cfg.max_answer_tokens
+
     # --- Policy 14: provider failure → explicit error ---
     try:
-        completion = await chat_provider.complete(messages, temperature=0.0)
+        completion = await chat_provider.complete(messages, **complete_kwargs)
     except Exception as exc:
         try:
             _engine.enforce_provider_result(state, exc)

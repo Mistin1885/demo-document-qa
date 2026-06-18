@@ -34,8 +34,13 @@ class _TiktokenEncoder(Protocol):
 class ContextAllocation(BaseModel):
     """Token budget allocation across different content categories.
 
-    The six fields must sum to exactly ``default_context_window`` (10,000 by
-    default); a ``model_validator`` enforces this.
+    Default fields sum to 10,000.  When ``ContextBudgetManager`` is constructed
+    with a different ``default_context_window`` and no explicit allocation,
+    these defaults are scaled proportionally via :meth:`scaled_to`.
+
+    The validator only ensures fields are non-negative.  Bespoke allocations
+    may sum to any positive number — the manager caps queries against
+    ``default_context_window`` independently.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -47,9 +52,9 @@ class ContextAllocation(BaseModel):
     answer_reserve: int = Field(default=2_000, ge=0)
     miscellaneous: int = Field(default=300, ge=0)
 
-    @model_validator(mode="after")
-    def _check_sum(self) -> ContextAllocation:
-        total = (
+    @property
+    def total(self) -> int:
+        return (
             self.system_and_tools
             + self.conversation
             + self.question_and_plan
@@ -57,12 +62,44 @@ class ContextAllocation(BaseModel):
             + self.answer_reserve
             + self.miscellaneous
         )
-        if total != 10_000:
+
+    @model_validator(mode="after")
+    def _check_positive(self) -> ContextAllocation:
+        if self.total <= 0:
             raise ValueError(
-                f"ContextAllocation fields must sum to 10,000; got {total}. "
-                "Adjust the individual fields so they total exactly 10,000."
+                f"ContextAllocation fields must sum to a positive integer; got {self.total}."
             )
         return self
+
+    @classmethod
+    def scaled_to(cls, window: int) -> ContextAllocation:
+        """Return the default allocation rescaled to sum to ``window``.
+
+        Uses integer arithmetic and absorbs the rounding remainder into
+        ``document_evidence`` so the total exactly matches ``window``.
+        """
+        if window <= 0:
+            raise ValueError("window must be a positive integer")
+        base = cls()
+        base_total = base.total
+        if window == base_total:
+            return base
+        ratio = window / base_total
+        s = int(base.system_and_tools * ratio)
+        c = int(base.conversation * ratio)
+        q = int(base.question_and_plan * ratio)
+        a = int(base.answer_reserve * ratio)
+        m = int(base.miscellaneous * ratio)
+        # document_evidence soaks the rounding remainder
+        d = window - s - c - q - a - m
+        return cls(
+            system_and_tools=s,
+            conversation=c,
+            question_and_plan=q,
+            document_evidence=d,
+            answer_reserve=a,
+            miscellaneous=m,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +131,10 @@ class ContextBudgetManager:
         allocation: ContextAllocation | None = None,
     ) -> None:
         self.default_context_window = default_context_window
-        self.allocation: ContextAllocation = allocation or ContextAllocation()
+        if allocation is None:
+            self.allocation = ContextAllocation.scaled_to(default_context_window)
+        else:
+            self.allocation = allocation
         self.last_was_estimate: bool = False
         self._tiktoken_enc: _TiktokenEncoder | None = _load_tiktoken()
 

@@ -209,7 +209,7 @@ async def test_disconnect_triggers_stop_event(
 
     stop_was_set = False
 
-    async def _slow_stream(c_id, s_id, q, *, chat_provider, stop_event=None):
+    async def _slow_stream(c_id, s_id, q, *, chat_provider, stop_event=None, **_kwargs):
         nonlocal stop_was_set
         if stop_event and stop_event.is_set():
             stop_was_set = True
@@ -339,3 +339,59 @@ async def test_list_messages_session_isolation(
         await session_service.list_messages(
             db_session, session_id=session_a, chat_id=chat_b
         )
+
+
+# ---------------------------------------------------------------------------
+# 9. Generation overrides in body propagate to QAService.run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generation_overrides_propagate(
+    api_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """max_answer_tokens / temperature / context_window in body reach QAService."""
+    chat_id = await _create_chat(db_session, "GenCfg Chat")
+    session_id = await _create_session(db_session, chat_id)
+    await db_session.commit()
+
+    captured: dict[str, Any] = {}
+
+    async def _capturing_run(*args: Any, **kwargs: Any) -> Any:
+        captured["generation_config"] = kwargs.get("generation_config")
+        from app.models.domain import QAResponse  # noqa: PLC0415
+        return QAResponse(
+            answer="ok",
+            citations=[],
+            documents_used=[],
+            coverage=1.0,
+            uncertainty=[],
+            session_id=session_id,
+            message_id=uuid.uuid4(),
+        )
+
+    from app.services.qa_service import QAService  # noqa: PLC0415
+
+    mock_svc = MagicMock(spec=QAService)
+    mock_svc.run = _capturing_run
+
+    with patch(
+        "app.api.messages.QAService", return_value=mock_svc
+    ):
+        resp = await api_client.post(
+            f"/chats/{chat_id}/sessions/{session_id}/messages",
+            json={
+                "question": "summarise",
+                "stream": False,
+                "max_answer_tokens": 4096,
+                "temperature": 0.7,
+                "context_window": 20000,
+            },
+        )
+    assert resp.status_code == 200
+    gc = captured["generation_config"]
+    assert gc is not None
+    assert gc.max_answer_tokens == 4096
+    assert gc.temperature == 0.7
+    assert gc.context_window == 20000
