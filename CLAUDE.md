@@ -309,6 +309,28 @@ Backend 10 / Parsing 15 / Vespa Retrieval 20 / Agent QA 20 / Isolation 15 / Prov
 - Tests never depend on real paid APIs; provide deterministic mock LLM / embedding / reranker.
 - Vespa feed is repeatable; deleting a document clears Vespa; ingestion is idempotent.
 
+### 12.1 Test Density Rule (mandatory — applies to every phase, every sub-agent)
+
+**Each feature / test file MUST contain ≤ 10 test items** (counted by `pytest --collect-only`, so each `parametrize` case counts as one item). This is a hard cap, not a guideline.
+
+Rationale: pre-refactor the suite ballooned to 651 tests with massive duplication (e.g. one test per enum value, one test per field). It slowed iteration without raising signal. The cap forces every test to earn its slot.
+
+How to apply when writing tests:
+1. **Cover the contract, not the surface.** One happy path + 1-2 critical edge cases per module is usually enough. Mandatory invariants (chat/session isolation, citation scope, security mask, dimension safety, deterministic id) always get a slot.
+2. **Collapse enumerations with `pytest.mark.parametrize`** — but the parametrize *cases also count*. Prefer 2-3 representative cases, not the full cross-product. If a mapping has 14 entries, test the boundary kinds + a default, not every entry.
+3. **Trust the type system.** mypy + Pydantic v2 already check field presence / types; do not re-test them.
+4. **Do not write a separate test for each branch when one realistic scenario exercises several branches together.** Bundle related assertions into one test with a clear name.
+5. **Never test `__repr__`, getters, or trivial dataclass round-trips.**
+6. **When adding a new test would push a file over 10, you MUST first delete or merge an existing one** — never let a file grow past the cap "temporarily."
+7. **Verification** before claiming a sub-agent task done:
+   ```bash
+   uv run pytest <file_or_dir> --collect-only -q | tail -3   # spot the per-file count
+   uv run pytest --collect-only -q | awk -F'::' '/::/{print $1}' | sort | uniq -c | sort -rn | head
+   ```
+   Every file in the listing must show `≤ 10`.
+
+Mandatory-gate tests (chat isolation, session isolation, hybrid retrieval, citations, arXiv parsing, LangGraph QA, provider settings) take priority for the 10 slots — never displace them with low-value coverage.
+
 ---
 
 ## 13. Answer Contract

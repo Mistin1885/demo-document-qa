@@ -1,9 +1,6 @@
 """Unit tests for app.parsing.mineru_client.
 
-All tests mock out the subprocess and HTTP calls — no real MinerU server or
-CLI is invoked.  The fixture ``fake_pdf`` creates a minimal directory tree
-that looks like MinerU output so that the post-processing pipeline can run
-end-to-end.
+All tests mock out subprocess and HTTP calls — no real MinerU server invoked.
 
 Test matrix
 -----------
@@ -14,8 +11,8 @@ d) subprocess rc!=0   — MinerUInvocationError raised with stderr.
 e) missing output dir — MinerUInvocationError raised when subprocess succeeds
                         but output directory is absent.
 f) gate failure       — MinerUGateFailure raised on page-marker count mismatch.
-g) health_check       — True on 200 + correct model id; False on 500; False on
-                        timeout.
+g) health_check       — True on 200 + correct model id; False on 500 / wrong model
+                        id / timeout (parametrized).
 """
 
 from __future__ import annotations
@@ -36,47 +33,22 @@ from app.parsing import (
 )
 
 # ---------------------------------------------------------------------------
-# Helpers to build a minimal valid MinerU output tree
+# Minimal fixture data
 # ---------------------------------------------------------------------------
 
 DOC_STEM = "fake_paper"
 
-# A minimal content_list.json that will produce a markdown with at least 2 pages
-# and enough content to pass the gate check.
 MINIMAL_CONTENT_LIST: list[dict[str, Any]] = [
-    # Page 1
     {"type": "text", "text": "# Fake Paper Title", "text_level": 1, "page_idx": 0},
-    {
-        "type": "text",
-        "text": "Author One, Author Two",
-        "page_idx": 0,
-    },
-    {
-        "type": "text",
-        "text": "Abstract: This is a fake paper about testing. " * 20,
-        "page_idx": 0,
-    },
-    # Page 2
+    {"type": "text", "text": "Author One, Author Two", "page_idx": 0},
+    {"type": "text", "text": "Abstract: This is a fake paper about testing. " * 20, "page_idx": 0},
     {"type": "text", "text": "## Introduction", "text_level": 2, "page_idx": 1},
-    {
-        "type": "text",
-        "text": "The introduction section contains a lot of text. " * 20,
-        "page_idx": 1,
-    },
+    {"type": "text", "text": "The introduction section contains a lot of text. " * 20, "page_idx": 1},
     {"type": "text", "text": "## Methods", "text_level": 2, "page_idx": 1},
-    {
-        "type": "text",
-        "text": "We use equation $x = y + z$ and $a = b$. " * 5,
-        "page_idx": 1,
-    },
+    {"type": "text", "text": "We use equation $x = y + z$ and $a = b$. " * 5, "page_idx": 1},
     {"type": "equation", "text": "$$E = mc^2$$", "page_idx": 1},
-    # Page 3 — references
     {"type": "text", "text": "## Conclusion", "text_level": 2, "page_idx": 2},
-    {
-        "type": "text",
-        "text": "In conclusion we find remarkable results. " * 10,
-        "page_idx": 2,
-    },
+    {"type": "text", "text": "In conclusion we find remarkable results. " * 10, "page_idx": 2},
     {"type": "ref_text", "text": "[1] Smith et al. 2020.", "page_idx": 2},
     {"type": "ref_text", "text": "[2] Jones et al. 2021.", "page_idx": 2},
     {"type": "ref_text", "text": "[3] Brown et al. 2022.", "page_idx": 2},
@@ -84,7 +56,6 @@ MINIMAL_CONTENT_LIST: list[dict[str, Any]] = [
     {"type": "ref_text", "text": "[5] Black et al. 2024.", "page_idx": 2},
 ]
 
-# A minimal middle.json with 3 pages, gate-passing block structure.
 MINIMAL_MIDDLE: dict[str, Any] = {
     "_backend": "hybrid",
     "_version_name": "MinerU-test-3.3.1",
@@ -131,30 +102,20 @@ MINIMAL_MIDDLE: dict[str, Any] = {
 
 
 def _setup_output_dir(output_dir: Path, stem: str = DOC_STEM) -> None:
-    """Create a minimal valid MinerU output directory for *stem*."""
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write content_list.json (consumed by postprocess, deleted afterwards)
     (output_dir / f"{stem}_content_list.json").write_text(
-        json.dumps(MINIMAL_CONTENT_LIST, ensure_ascii=False),
-        encoding="utf-8",
+        json.dumps(MINIMAL_CONTENT_LIST, ensure_ascii=False), encoding="utf-8"
     )
-    # Write middle.json
     (output_dir / f"{stem}_middle.json").write_text(
-        json.dumps(MINIMAL_MIDDLE, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        json.dumps(MINIMAL_MIDDLE, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    # images/ dir (empty is fine for these tests — no images in MINIMAL_CONTENT_LIST)
     (output_dir / "images").mkdir(exist_ok=True)
 
 
 def _make_fake_subprocess(returncode: int = 0, stdout: str = "", stderr: str = "") -> MagicMock:
-    """Return a mock asyncio.Process whose communicate() returns immediately."""
     proc = MagicMock()
     proc.returncode = returncode
-    proc.communicate = AsyncMock(
-        return_value=(stdout.encode(), stderr.encode())
-    )
+    proc.communicate = AsyncMock(return_value=(stdout.encode(), stderr.encode()))
     proc.kill = MagicMock()
     return proc
 
@@ -166,13 +127,11 @@ def _make_fake_subprocess(returncode: int = 0, stdout: str = "", stderr: str = "
 
 @pytest.fixture
 def tmp_parsed_root(tmp_path: Path) -> Path:
-    """Return a temporary directory to use as parsed_root."""
     return tmp_path / "parsed"
 
 
 @pytest.fixture
 def fake_pdf(tmp_path: Path) -> Path:
-    """Return a fake PDF path (file does not need to be a real PDF)."""
     p = tmp_path / f"{DOC_STEM}.pdf"
     p.write_bytes(b"%PDF-1.4 fake content")
     return p
@@ -185,17 +144,14 @@ def fake_pdf(tmp_path: Path) -> Path:
 
 @pytest.mark.asyncio
 async def test_parse_pdf_happy_path(fake_pdf: Path, tmp_parsed_root: Path) -> None:
-    """parse_pdf returns a valid MinerUParseResult on success."""
     output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
-
     fake_proc = _make_fake_subprocess(returncode=0)
 
-    async def fake_create_subprocess(*args: Any, **kwargs: Any) -> MagicMock:
-        # Simulate MinerU creating the output dir
+    async def fake_create(*args: Any, **kwargs: Any) -> MagicMock:
         _setup_output_dir(output_dir)
         return fake_proc
 
-    with patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess):
+    with patch("asyncio.create_subprocess_exec", side_effect=fake_create):
         client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
         result = await client.parse_pdf(fake_pdf)
 
@@ -217,12 +173,8 @@ async def test_parse_pdf_happy_path(fake_pdf: Path, tmp_parsed_root: Path) -> No
 
 @pytest.mark.asyncio
 async def test_idempotent_rerun_skips_subprocess(fake_pdf: Path, tmp_parsed_root: Path) -> None:
-    """When a gate-passing result already exists, subprocess is NOT called again."""
     output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
-    # Pre-populate the output directory WITH post-processed files
-    # (postprocess has already run, so we need .md + _middle.json, no content_list)
     _setup_output_dir(output_dir)
-    # Run postprocess so the directory is in its final state (md rebuilt, extras removed)
     from app.parsing._postprocess import postprocess as _postprocess
 
     _postprocess(output_dir, DOC_STEM)
@@ -238,9 +190,9 @@ async def test_idempotent_rerun_skips_subprocess(fake_pdf: Path, tmp_parsed_root
         client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
         result = await client.parse_pdf(fake_pdf)
 
-    assert call_count == 0, "subprocess should not be called when result is cached"
+    assert call_count == 0
     assert result.gate_summary.get("gate_pass") is True
-    assert result.duration_seconds == 0.0  # cached — no duration
+    assert result.duration_seconds == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -250,9 +202,7 @@ async def test_idempotent_rerun_skips_subprocess(fake_pdf: Path, tmp_parsed_root
 
 @pytest.mark.asyncio
 async def test_force_reruns_subprocess(fake_pdf: Path, tmp_parsed_root: Path) -> None:
-    """force=True triggers subprocess even when a valid cached result exists."""
     output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
-    # Pre-populate with valid post-processed result
     _setup_output_dir(output_dir)
     from app.parsing._postprocess import postprocess as _postprocess
 
@@ -263,7 +213,6 @@ async def test_force_reruns_subprocess(fake_pdf: Path, tmp_parsed_root: Path) ->
     async def counting_create(*args: Any, **kwargs: Any) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        # Re-create the output dir because force=True deleted it
         _setup_output_dir(output_dir)
         return _make_fake_subprocess(returncode=0)
 
@@ -271,7 +220,7 @@ async def test_force_reruns_subprocess(fake_pdf: Path, tmp_parsed_root: Path) ->
         client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
         result = await client.parse_pdf(fake_pdf, force=True)
 
-    assert call_count == 1, "subprocess must be called once with force=True"
+    assert call_count == 1
     assert result.gate_summary.get("gate_pass") is True
 
 
@@ -284,13 +233,12 @@ async def test_force_reruns_subprocess(fake_pdf: Path, tmp_parsed_root: Path) ->
 async def test_subprocess_nonzero_raises_invocation_error(
     fake_pdf: Path, tmp_parsed_root: Path
 ) -> None:
-    """Subprocess exit code != 0 raises MinerUInvocationError with stderr."""
     fake_proc = _make_fake_subprocess(returncode=1, stderr="some VLM server error")
 
-    async def fail_proc(*args: Any, **kwargs: Any) -> MagicMock:
-        return fake_proc
-
-    with patch("asyncio.create_subprocess_exec", side_effect=fail_proc):
+    with patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=AsyncMock(return_value=fake_proc),
+    ):
         client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
         with pytest.raises(MinerUInvocationError) as exc_info:
             await client.parse_pdf(fake_pdf)
@@ -308,14 +256,12 @@ async def test_subprocess_nonzero_raises_invocation_error(
 async def test_subprocess_missing_output_dir_raises(
     fake_pdf: Path, tmp_parsed_root: Path
 ) -> None:
-    """When subprocess exits 0 but the output directory is absent, raise."""
     fake_proc = _make_fake_subprocess(returncode=0)
 
-    async def no_output(*args: Any, **kwargs: Any) -> MagicMock:
-        # Do NOT create output_dir — simulate MinerU producing no output
-        return fake_proc
-
-    with patch("asyncio.create_subprocess_exec", side_effect=no_output):
+    with patch(
+        "asyncio.create_subprocess_exec",
+        side_effect=AsyncMock(return_value=fake_proc),
+    ):
         client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
         with pytest.raises(MinerUInvocationError) as exc_info:
             await client.parse_pdf(fake_pdf)
@@ -332,20 +278,14 @@ async def test_subprocess_missing_output_dir_raises(
 async def test_gate_failure_raises_mineru_gate_failure(
     fake_pdf: Path, tmp_parsed_root: Path
 ) -> None:
-    """When the post-processed markdown has wrong page marker counts, raise MinerUGateFailure."""
     output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
 
     async def create_bad_output(*args: Any, **kwargs: Any) -> MagicMock:
-        # Create a middle.json claiming 3 pages but a markdown with only 1 page marker
         output_dir.mkdir(parents=True, exist_ok=True)
-        # content_list.json with a single page only (page_idx=0)
-        bad_content_list = [
-            {"type": "text", "text": "Short content", "page_idx": 0},
-        ]
+        bad_content_list = [{"type": "text", "text": "Short content", "page_idx": 0}]
         (output_dir / f"{DOC_STEM}_content_list.json").write_text(
             json.dumps(bad_content_list), encoding="utf-8"
         )
-        # middle.json still claims 3 pages
         (output_dir / f"{DOC_STEM}_middle.json").write_text(
             json.dumps(MINIMAL_MIDDLE), encoding="utf-8"
         )
@@ -359,145 +299,60 @@ async def test_gate_failure_raises_mineru_gate_failure(
 
     gate = exc_info.value.gate_summary
     assert gate["gate_pass"] is False
-    # The markdown only has 1 page marker open but middle claims 3 pages
     assert gate["page_markers_open"] != gate["pages"]
 
 
 # ---------------------------------------------------------------------------
-# g) health_check
+# g) health_check (parametrized: correct model / server error / timeout)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_health_check_true_on_correct_model(
-    tmp_parsed_root: Path,
-) -> None:
-    """health_check returns True when server responds 200 with the expected model id."""
-
-    client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
-
-    # Manually patch httpx.AsyncClient to avoid needing the pytest fixture here
+def _make_mock_http_client(
+    status_code: int = 200,
+    json_body: dict | None = None,
+    raise_exc: Exception | None = None,
+) -> AsyncMock:
     mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json = MagicMock(
-        return_value={
-            "data": [{"id": "opendatalab/MinerU2.5-2509-1.2B"}],
-        }
-    )
+    mock_resp.status_code = status_code
+    mock_resp.json = MagicMock(return_value=json_body or {})
 
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get = AsyncMock(return_value=mock_resp)
-    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_instance):
-        result = await client.health_check()
-
-    assert result is True
+    mock_client = AsyncMock()
+    if raise_exc is not None:
+        mock_client.get = AsyncMock(side_effect=raise_exc)
+    else:
+        mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    return mock_client
 
 
 @pytest.mark.asyncio
-async def test_health_check_false_on_server_error(
-    tmp_parsed_root: Path,
+@pytest.mark.parametrize(
+    "scenario, expected",
+    [
+        ("correct_model", True),
+        ("server_error_500", False),
+        ("timeout", False),
+    ],
+)
+async def test_health_check(
+    tmp_parsed_root: Path, scenario: str, expected: bool
 ) -> None:
-    """health_check returns False when server responds with a non-200 status."""
     client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 500
-    mock_resp.json = MagicMock(return_value={})
+    if scenario == "correct_model":
+        mock_http = _make_mock_http_client(
+            status_code=200,
+            json_body={"data": [{"id": "opendatalab/MinerU2.5-2509-1.2B"}]},
+        )
+    elif scenario == "server_error_500":
+        mock_http = _make_mock_http_client(status_code=500, json_body={})
+    else:  # timeout
+        mock_http = _make_mock_http_client(
+            raise_exc=httpx.TimeoutException("connect timeout")
+        )
 
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get = AsyncMock(return_value=mock_resp)
-    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_instance):
+    with patch("httpx.AsyncClient", return_value=mock_http):
         result = await client.health_check()
 
-    assert result is False
-
-
-@pytest.mark.asyncio
-async def test_health_check_false_on_wrong_model_id(
-    tmp_parsed_root: Path,
-) -> None:
-    """health_check returns False when a different model id is reported."""
-    client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
-
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json = MagicMock(
-        return_value={"data": [{"id": "some-other-model/wrong-id"}]}
-    )
-
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get = AsyncMock(return_value=mock_resp)
-    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_instance):
-        result = await client.health_check()
-
-    assert result is False
-
-
-@pytest.mark.asyncio
-async def test_health_check_false_on_timeout(
-    tmp_parsed_root: Path,
-) -> None:
-    """health_check returns False when the HTTP call raises an exception (e.g. timeout)."""
-    client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
-
-    mock_client_instance = AsyncMock()
-    mock_client_instance.get = AsyncMock(
-        side_effect=httpx.TimeoutException("connect timeout")
-    )
-    mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
-    mock_client_instance.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("httpx.AsyncClient", return_value=mock_client_instance):
-        result = await client.health_check()
-
-    assert result is False
-
-
-# ---------------------------------------------------------------------------
-# Additional: document_id is propagated into gate_summary
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_document_id_in_gate_summary(fake_pdf: Path, tmp_parsed_root: Path) -> None:
-    """When document_id is passed, it appears in gate_summary."""
-    output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
-    fake_proc = _make_fake_subprocess(returncode=0)
-
-    async def fake_create(*args: Any, **kwargs: Any) -> MagicMock:
-        _setup_output_dir(output_dir)
-        return fake_proc
-
-    with patch("asyncio.create_subprocess_exec", side_effect=fake_create):
-        client = MinerUClient(server_url="http://localhost:8001", parsed_root=tmp_parsed_root)
-        result = await client.parse_pdf(fake_pdf, document_id="doc-uuid-123")
-
-    assert result.gate_summary.get("document_id") == "doc-uuid-123"
-
-
-# ---------------------------------------------------------------------------
-# Additional: MinerUClient reads server_url from settings when not provided
-# ---------------------------------------------------------------------------
-
-
-def test_client_uses_settings_server_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    """MinerUClient without explicit server_url reads from app.config.get_settings()."""
-    monkeypatch.setenv("MINERU_SERVER_URL", "http://custom-vlm:9999")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
-
-    client = MinerUClient(parsed_root=Path("data/parsed"))
-    assert client._server_url == "http://custom-vlm:9999"
-
-    # Cleanup cache to avoid leaking into other tests
-    get_settings.cache_clear()
+    assert result is expected

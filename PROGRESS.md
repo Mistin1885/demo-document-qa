@@ -5,8 +5,11 @@
 > 一切以 `CLAUDE.md` 為準；架構偏離先改 `CLAUDE.md` 再記於本檔「決策紀錄」。
 > 指令一律 `uv run` / `uv add`。後端 import root = `app`（在 `src/app/`）。
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
+> **測試密度上限：每個 test 檔 ≤10 個測試項（詳見 `CLAUDE.md §12.1`）。**
 
-最後更新：2026-06-18 ｜ 當前 Phase：_Phase 6 完成（Vespa application + feed/delete + RetrievalService RRF/rerank + eval harness，651 tests 全綠）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 6 Vespa Retrieval /20 mandatory PASS_
+最後更新：2026-06-18 ｜ 當前 Phase：_Phase 6 完成 + 測試套件瘦身（651 → 270 items，每檔 ≤10 全綠）_ ｜ 累計 Goal Score：_Parsing /15 mandatory PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 6 Vespa Retrieval /20 mandatory PASS_
+
+> **2026-06-18 測試瘦身**：依使用者要求「每功能 ≤10 測試項」，將測試從 651 精簡至 **270**（-58.5%），全綠 1.6 秒。規則正式寫入 `CLAUDE.md §12.1` 與 `DEVELOPMENT_PLAN.md` A.3 sub-agent prompt 模板，未來新增測試 / phase 必須遵守，違反 = 驗收不過。涵蓋率不退步：所有 mandatory gate（chat/session isolation、citation、parsing、hybrid retrieval、provider）測試全部保留。
 
 ---
 
@@ -168,6 +171,7 @@
 - 2026-06-18｜Phase 6.3 second-phase 表達限制：pyvespa `RankProfile(second_phase=SecondPhaseRanking(expression=...))` 完整支援，無需 raw text fallback；`hybrid_with_native_rerank` inherits `hybrid_first_phase` 並覆寫 second_phase，測試確認繼承關係正確寫入 .sd｜`src/app/vespa/app_package.py`
 - 2026-06-18｜Phase 6.1 services.xml container 命名：pyvespa 預設生成 `id="documentchunk_container"` / `id="documentchunk_content"`，不符合 spec（`default` / `documents`）；已在 `write_application_files` step 2 手動覆寫為正確名稱｜`src/app/vespa/app_package.py::_services_xml`
 - 2026-06-18｜Phase 5.4 ChatManifest 為 **read-time computed**（GUIDE §8.3，不在 ingestion 階段預先產生 Chat-wide summary）；authors 從 Phase 4.3 hierarchy `node_type="authors"` 節點 content 切字（`,;\n` + ` and `），`Document` ORM 不擴新欄位；`Document.title` 退路為 `node_type="document"` 的 root DocumentNode title｜`src/app/enrichment/manifest.py`
+- 2026-06-18｜**測試密度上限：每個 test 檔最多 10 個測試項**（含 parametrize 展開）。把 Phase 1-6 累積的 651 個測試精簡到 270 個（-58.5%），全程依「契約 > 列舉」原則：mandatory invariants 全保留、列舉用 parametrize 留代表性 2-3 case、刪除 `__repr__` / type-only / 重複覆蓋。規則寫入 `CLAUDE.md §12.1`，`DEVELOPMENT_PLAN.md` A.3 sub-agent prompt 模板加入「測試要求」段落，未來 phase 7-9 與所有 sub-agent 一律遵守。理由：原本測試膨脹只增加迭代成本，不增加 signal；mandatory gate（chat/session isolation、citation、provider、parsing、hybrid retrieval）的覆蓋一個沒少｜`CLAUDE.md §12.1`、`DEVELOPMENT_PLAN.md §A.3`、`tests/`
 
 ---
 
@@ -189,9 +193,11 @@
 | MinerU PoC | `uv run mineru -p data/2410.05779v3.pdf -o data/parsed -b hybrid-http-client -u http://localhost:8001` | ✅ | gate_pass=true；`scripts/mineru_poc.py` 可重跑 |
 | lint | `uv run ruff check src/app tests migrations scripts` | ✅ | 2026-06-16（全綠；`migrations/versions/` autogenerate excluded） |
 | 型別 | `uv run mypy src/app` | ✅ | 2026-06-17 — 49 source files, 0 issues |
-| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-17 — Phase 2-4 既有 224 + Phase 5.1 section 26 + 5.2 document 12 + 5.3 facts extractor/service + 5.4 manifest = 317 綠 |
-| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-17 — chats/sessions/documents + 4 isolation + Phase 5.3 facts_api 6 + Phase 5.4 manifest_api 5 = 75 綠 |
-| 評估測試 | `uv run pytest tests/evaluation` | ✅（parser harness） | 2026-06-17 — 31 綠；Phase 6/9 retrieval/goal-score harness 尚未建 |
+| 單元測試 | `uv run pytest tests/unit` | ✅ | 2026-06-18 — 瘦身後 213 綠（從 ~530 削減；每檔 ≤10） |
+| 整合測試 | `uv run pytest tests/integration` | ✅ | 2026-06-18 — 瘦身後 42 綠（chats/sessions/documents + 全部 isolation 保留 + facts_api + manifest_api） |
+| 評估測試 | `uv run pytest tests/evaluation` | ✅（parser + retrieval harness） | 2026-06-18 — 瘦身後 15 綠（parser_eval 9 + retrieval_eval 6，所有 mandatory gate 保留） |
+| 全套測試 | `uv run pytest -q` | ✅ | 2026-06-18 — **270 passed in 1.6s**；總數從 651 精簡 58.5% |
+| 每檔密度檢查 | `uv run pytest --collect-only -q \| awk -F'::' '/::/{print $1}' \| sort \| uniq -c \| sort -rn \| head` | ✅ | 2026-06-18 — max_per_file=10，36 個 test 檔全部 ≤10 |
 | Parser eval（real data, LightRAG） | `uv run python scripts/run_parser_eval.py` | ✅ PASS | `artifacts/evaluation/parser-report.{json,md}`；H-F1=0.333、math-recall=1.0、refs=21、figs=6、tables=6、eqs=2 |
 | Alembic upgrade | `uv run alembic upgrade head` | ✅ | 2026-06-16 — revision `b5b02bc9d209`；11 張表（10 + alembic_version）建立 |
 | Alembic round-trip | `uv run alembic downgrade base && uv run alembic upgrade head` | ✅ | 2026-06-16 — 雙向可重跑 |

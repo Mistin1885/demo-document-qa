@@ -20,25 +20,16 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_create_chat_returns_201(api_client: AsyncClient) -> None:
-    response = await api_client.post("/chats/", json={"name": "My Notebook"})
-    assert response.status_code == 201
-    body = response.json()
-    assert body["name"] == "My Notebook"
-    assert body["description"] is None
-    assert "id" in body
-    assert "created_at" in body
-    assert "updated_at" in body
-
-
-@pytest.mark.asyncio
-async def test_create_chat_with_description(api_client: AsyncClient) -> None:
     response = await api_client.post(
         "/chats/",
-        json={"name": "AI Papers", "description": "Arxiv papers on LLMs"},
+        json={"name": "My Notebook", "description": "Arxiv papers on LLMs"},
     )
     assert response.status_code == 201
     body = response.json()
+    assert body["name"] == "My Notebook"
     assert body["description"] == "Arxiv papers on LLMs"
+    assert "id" in body
+    assert "created_at" in body
 
 
 # ---------------------------------------------------------------------------
@@ -49,13 +40,11 @@ async def test_create_chat_with_description(api_client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_get_chat_found(api_client: AsyncClient) -> None:
     create_resp = await api_client.post("/chats/", json={"name": "Findable"})
-    assert create_resp.status_code == 201
     chat_id = create_resp.json()["id"]
 
     get_resp = await api_client.get(f"/chats/{chat_id}")
     assert get_resp.status_code == 200
     assert get_resp.json()["id"] == chat_id
-    assert get_resp.json()["name"] == "Findable"
 
 
 @pytest.mark.asyncio
@@ -66,37 +55,23 @@ async def test_get_chat_not_found_returns_404(api_client: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# GET /chats
+# GET /chats — list + pagination
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_list_chats_returns_200(api_client: AsyncClient) -> None:
-    response = await api_client.get("/chats/")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-
-@pytest.mark.asyncio
-async def test_list_chats_includes_created(api_client: AsyncClient) -> None:
-    create_resp = await api_client.post("/chats/", json={"name": "Listed"})
-    chat_id = create_resp.json()["id"]
-
-    list_resp = await api_client.get("/chats/")
-    ids = [c["id"] for c in list_resp.json()]
-    assert chat_id in ids
-
-
-@pytest.mark.asyncio
-async def test_list_chats_pagination(api_client: AsyncClient) -> None:
+async def test_list_chats_and_pagination(api_client: AsyncClient) -> None:
+    """GET returns created chats; pagination produces non-overlapping pages."""
     for i in range(3):
         await api_client.post("/chats/", json={"name": f"Paginate{i}"})
+
+    list_resp = await api_client.get("/chats/")
+    assert list_resp.status_code == 200
+    assert isinstance(list_resp.json(), list)
 
     page1 = await api_client.get("/chats/?limit=2&offset=0")
     page2 = await api_client.get("/chats/?limit=2&offset=2")
 
-    assert page1.status_code == 200
-    assert page2.status_code == 200
     ids1 = {c["id"] for c in page1.json()}
     ids2 = {c["id"] for c in page2.json()}
     assert ids1.isdisjoint(ids2)

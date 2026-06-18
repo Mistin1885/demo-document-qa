@@ -4,6 +4,7 @@
 > 先讀 `CLAUDE.md`（架構契約，全英文）與 `GUIDE.md`（完整規格）。一切以 `CLAUDE.md` 為準。
 > **所有指令一律 `uv`（`uv add` 裝套件、`uv run` 跑任務），無例外。**
 > **執行原則：MinerU 解析必須最先驗證（Phase 1 為硬性 gate），確認能產生可靠 markdown 後才往下開發。**
+> **測試密度上限（硬性規則，所有 phase / sub-agent 一律適用）：每個 test 檔最多 10 個測試項（`pytest --collect-only` 計數，parametrize 的每個 case 算一項）。詳見 CLAUDE.md §12.1。違反 = 驗收不通過。**
 
 ---
 
@@ -30,10 +31,16 @@
 【背景】<為何需要、上游已完成什麼、下游會用到什麼>
 【需建立/修改的檔案】<明確路徑清單（用 src/app/、deploy/、data/、tests/）>
 【實作要求】<對應 CLAUDE.md / GUIDE 的硬性約束，逐條列出>
-【測試要求】<要寫哪些測試、放哪、用 deterministic mock，不得碰真實付費 API>
-【驗收標準】<可量測的完成定義；列出主控會跑的 `uv run` 驗證指令>
-【限制】不要超出任務範圍重構；不要 hard-code 測試答案；不要降低 chat/session 隔離與 citation 標準。
-【回報】完成後用 <200 字總結：改了哪些檔、跑了哪些 `uv run` 指令、結果、未解問題。
+【測試要求】（必讀 CLAUDE.md §12.1）
+ - 每個 test 檔 **≤ 10 個測試項**（`pytest --collect-only` 計數；parametrize 每 case 算一項）。
+ - 只測契約（happy path + 1-2 個 critical edge + mandatory invariants），不要為每個欄位/每個 enum 各寫一個測試。
+ - 不要重做 mypy / Pydantic 已涵蓋的型別檢查；不要測 `__repr__` / getters。
+ - 列舉用 parametrize 合併，但保留代表性 2-3 個 case 即可，不要展開全部組合。
+ - 一律用 deterministic mock，不得碰真實付費 API。
+ - 寫完用 `uv run pytest <file> --collect-only -q | tail -3` 確認該檔 ≤10。
+【驗收標準】<可量測的完成定義；列出主控會跑的 `uv run` 驗證指令；含每檔 ≤10 的證明>
+【限制】不要超出任務範圍重構；不要 hard-code 測試答案；不要降低 chat/session 隔離與 citation 標準；不得讓任何 test 檔測試數 >10。
+【回報】完成後用 <200 字總結：改了哪些檔、跑了哪些 `uv run` 指令、結果、每檔最終測試數、未解問題。
 ```
 
 ### A.4 每個 Phase 的標準收尾流程

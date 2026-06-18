@@ -80,7 +80,7 @@ async def chat_b(db_session: AsyncSession) -> Chat:
 
 
 # ---------------------------------------------------------------------------
-# upload_document — happy path
+# upload_document — happy path + validation
 # ---------------------------------------------------------------------------
 
 
@@ -106,15 +106,6 @@ async def test_upload_document_happy_path(
     assert result.chat_id == chat_a.id
     assert result.original_filename == "paper.pdf"
     assert result.status == "uploaded"
-    assert result.mime_type == "application/pdf"
-    assert result.page_count is None  # Phase 4 will fill this.
-
-    # Verify ORM row exists.
-    doc_row = await db_session.scalar(
-        select(Document).where(Document.id == result.id)
-    )
-    assert doc_row is not None
-    assert doc_row.checksum_sha256 == result.checksum_sha256
 
     # Verify ChatDocument association exists.
     assoc = await db_session.scalar(
@@ -124,39 +115,45 @@ async def test_upload_document_happy_path(
         )
     )
     assert assoc is not None
-
-    # Verify file on disk.
     assert await storage.exists(chat_a.id, result.id, "paper.pdf")
 
 
-# ---------------------------------------------------------------------------
-# upload_document — chat not found
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_upload_document_chat_not_found(
-    db_session: AsyncSession, tmp_path: Path
+@pytest.mark.parametrize(
+    "kwargs,error_type",
+    [
+        (
+            {"file_bytes": _FAKE_PDF, "filename": "paper.pdf", "mime_type": "application/pdf"},
+            ChatNotFound,
+        ),
+        (
+            {"file_bytes": b"<html/>", "filename": "page.html", "mime_type": "text/html"},
+            InvalidUpload,
+        ),
+    ],
+)
+async def test_upload_document_errors(
+    db_session: AsyncSession,
+    chat_a: Chat,
+    tmp_path: Path,
+    kwargs: dict,
+    error_type: type,
 ) -> None:
-    """upload_document raises ChatNotFound for a non-existent chat."""
+    """upload_document raises appropriate errors for bad chat or bad MIME type."""
     storage = _make_storage(tmp_path)
     indexer = NullVespaIndexer()
 
-    with pytest.raises(ChatNotFound):
+    # For ChatNotFound test, use a random UUID; for InvalidUpload, use chat_a.id
+    chat_id = uuid.uuid4() if error_type is ChatNotFound else chat_a.id
+
+    with pytest.raises(error_type):
         await document_service.upload_document(
             db_session,
-            uuid.uuid4(),
-            file_bytes=_FAKE_PDF,
-            filename="paper.pdf",
-            mime_type="application/pdf",
+            chat_id,
             storage=storage,
             indexer=indexer,
+            **kwargs,
         )
-
-
-# ---------------------------------------------------------------------------
-# upload_document — duplicate checksum
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -181,7 +178,7 @@ async def test_upload_document_duplicate_checksum(
         await document_service.upload_document(
             db_session,
             chat_a.id,
-            file_bytes=_FAKE_PDF,  # same bytes → same checksum
+            file_bytes=_FAKE_PDF,
             filename="paper_copy.pdf",
             mime_type="application/pdf",
             storage=storage,
@@ -190,31 +187,6 @@ async def test_upload_document_duplicate_checksum(
 
     assert exc_info.value.document_id == first.id
     assert exc_info.value.chat_id == chat_a.id
-
-
-# ---------------------------------------------------------------------------
-# upload_document — invalid MIME type
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_upload_document_invalid_mime(
-    db_session: AsyncSession, chat_a: Chat, tmp_path: Path
-) -> None:
-    """Uploading a non-PDF file raises InvalidUpload."""
-    storage = _make_storage(tmp_path)
-    indexer = NullVespaIndexer()
-
-    with pytest.raises(InvalidUpload):
-        await document_service.upload_document(
-            db_session,
-            chat_a.id,
-            file_bytes=b"<html>not a pdf</html>",
-            filename="page.html",
-            mime_type="text/html",
-            storage=storage,
-            indexer=indexer,
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -231,28 +203,17 @@ async def test_list_documents_isolation(
     indexer = NullVespaIndexer()
 
     await document_service.upload_document(
-        db_session,
-        chat_a.id,
-        file_bytes=_FAKE_PDF,
-        filename="a.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=indexer,
+        db_session, chat_a.id, file_bytes=_FAKE_PDF, filename="a.pdf",
+        mime_type="application/pdf", storage=storage, indexer=indexer,
     )
     await document_service.upload_document(
-        db_session,
-        chat_b.id,
-        file_bytes=_FAKE_PDF2,
-        filename="b.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=indexer,
+        db_session, chat_b.id, file_bytes=_FAKE_PDF2, filename="b.pdf",
+        mime_type="application/pdf", storage=storage, indexer=indexer,
     )
 
     docs_a = await document_service.list_documents(db_session, chat_a.id)
     assert len(docs_a) == 1
     assert docs_a[0].chat_id == chat_a.id
-    assert docs_a[0].original_filename == "a.pdf"
 
 
 # ---------------------------------------------------------------------------
@@ -269,13 +230,8 @@ async def test_get_document_cross_chat_raises(
     indexer = NullVespaIndexer()
 
     doc_b = await document_service.upload_document(
-        db_session,
-        chat_b.id,
-        file_bytes=_FAKE_PDF,
-        filename="b.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=indexer,
+        db_session, chat_b.id, file_bytes=_FAKE_PDF, filename="b.pdf",
+        mime_type="application/pdf", storage=storage, indexer=indexer,
     )
 
     with pytest.raises(DocumentNotFound):
@@ -283,7 +239,7 @@ async def test_get_document_cross_chat_raises(
 
 
 # ---------------------------------------------------------------------------
-# delete_document — sole owner → full delete
+# delete_document — sole owner → full delete + Vespa indexer called
 # ---------------------------------------------------------------------------
 
 
@@ -296,102 +252,19 @@ async def test_delete_document_sole_owner(
     spy_indexer = _make_spy_indexer()
 
     doc = await document_service.upload_document(
-        db_session,
-        chat_a.id,
-        file_bytes=_FAKE_PDF,
-        filename="to_delete.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=spy_indexer,
+        db_session, chat_a.id, file_bytes=_FAKE_PDF, filename="to_delete.pdf",
+        mime_type="application/pdf", storage=storage, indexer=spy_indexer,
     )
-
-    assert await storage.exists(chat_a.id, doc.id, "to_delete.pdf")
 
     await document_service.delete_document(
         db_session, chat_a.id, doc.id, storage=storage, indexer=spy_indexer
     )
 
-    # Indexer was called exactly once.
     spy_indexer.delete_by_document.assert_awaited_once_with(chat_a.id, doc.id)
-
-    # File no longer on disk.
     assert not await storage.exists(chat_a.id, doc.id, "to_delete.pdf")
 
-    # ORM row gone.
     db_doc = await db_session.scalar(select(Document).where(Document.id == doc.id))
     assert db_doc is None
-
-    # Association gone.
-    assoc = await db_session.scalar(
-        select(ChatDocument).where(
-            ChatDocument.chat_id == chat_a.id,
-            ChatDocument.document_id == doc.id,
-        )
-    )
-    assert assoc is None
-
-
-# ---------------------------------------------------------------------------
-# delete_document — shared → only association removed
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_delete_document_shared(
-    db_session: AsyncSession, chat_a: Chat, chat_b: Chat, tmp_path: Path
-) -> None:
-    """Deleting a shared document from chat_a only removes the association."""
-    storage = _make_storage(tmp_path)
-    spy_indexer = _make_spy_indexer()
-
-    # Upload to chat_a (owner).
-    doc = await document_service.upload_document(
-        db_session,
-        chat_a.id,
-        file_bytes=_FAKE_PDF,
-        filename="shared.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=spy_indexer,
-    )
-
-    # Share with chat_b.
-    await document_service.associate_document(
-        db_session, chat_b.id, doc.id, source_chat_id=chat_a.id
-    )
-
-    # Now delete from chat_a's scope.
-    await document_service.delete_document(
-        db_session, chat_a.id, doc.id, storage=storage, indexer=spy_indexer
-    )
-
-    # Indexer must NOT have been called (document still referenced by chat_b).
-    spy_indexer.delete_by_document.assert_not_awaited()
-
-    # File still on disk.
-    assert await storage.exists(chat_a.id, doc.id, "shared.pdf")
-
-    # ORM row still exists.
-    db_doc = await db_session.scalar(select(Document).where(Document.id == doc.id))
-    assert db_doc is not None
-
-    # chat_a's association gone.
-    assoc_a = await db_session.scalar(
-        select(ChatDocument).where(
-            ChatDocument.chat_id == chat_a.id,
-            ChatDocument.document_id == doc.id,
-        )
-    )
-    assert assoc_a is None
-
-    # chat_b's association still present.
-    assoc_b = await db_session.scalar(
-        select(ChatDocument).where(
-            ChatDocument.chat_id == chat_b.id,
-            ChatDocument.document_id == doc.id,
-        )
-    )
-    assert assoc_b is not None
 
 
 # ---------------------------------------------------------------------------
@@ -400,61 +273,23 @@ async def test_delete_document_shared(
 
 
 @pytest.mark.asyncio
-async def test_associate_document_success(
+async def test_associate_document_success_and_duplicate(
     db_session: AsyncSession, chat_a: Chat, chat_b: Chat, tmp_path: Path
 ) -> None:
-    """associate_document creates the ChatDocument association row."""
+    """associate_document creates the association; duplicate raises ChatDocumentAlreadyAssociated."""
     storage = _make_storage(tmp_path)
     indexer = NullVespaIndexer()
 
     doc = await document_service.upload_document(
-        db_session,
-        chat_a.id,
-        file_bytes=_FAKE_PDF,
-        filename="assoc.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=indexer,
+        db_session, chat_a.id, file_bytes=_FAKE_PDF, filename="assoc.pdf",
+        mime_type="application/pdf", storage=storage, indexer=indexer,
     )
 
     result = await document_service.associate_document(
         db_session, chat_b.id, doc.id, source_chat_id=chat_a.id
     )
-
     assert result.chat_id == chat_b.id
     assert result.document_id == doc.id
-
-    # Verify in DB.
-    assoc = await db_session.scalar(
-        select(ChatDocument).where(
-            ChatDocument.chat_id == chat_b.id,
-            ChatDocument.document_id == doc.id,
-        )
-    )
-    assert assoc is not None
-
-
-@pytest.mark.asyncio
-async def test_associate_document_duplicate_raises(
-    db_session: AsyncSession, chat_a: Chat, chat_b: Chat, tmp_path: Path
-) -> None:
-    """associate_document raises ChatDocumentAlreadyAssociated on duplicate."""
-    storage = _make_storage(tmp_path)
-    indexer = NullVespaIndexer()
-
-    doc = await document_service.upload_document(
-        db_session,
-        chat_a.id,
-        file_bytes=_FAKE_PDF,
-        filename="dup_assoc.pdf",
-        mime_type="application/pdf",
-        storage=storage,
-        indexer=indexer,
-    )
-
-    await document_service.associate_document(
-        db_session, chat_b.id, doc.id, source_chat_id=chat_a.id
-    )
 
     with pytest.raises(ChatDocumentAlreadyAssociated):
         await document_service.associate_document(

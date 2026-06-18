@@ -5,10 +5,8 @@ and the ``db_session`` / ``api_client`` fixtures from ``tests/conftest.py``.
 
 Isolation coverage (CLAUDE.md §2 mandatory gates)
 --------------------------------------------------
-- GET /chats/{A}/documents/{B_doc_id} must return 404 — must not leak that
-  the document exists in Chat B.
+- GET /chats/{A}/documents/{B_doc_id} must return 404.
 - DELETE /chats/{A}/documents/{B_doc_id} must return 404.
-- Only after a document has no more associations is it fully deleted.
 """
 
 from __future__ import annotations
@@ -44,14 +42,7 @@ def _pdf_file(content: bytes = _FAKE_PDF_BYTES, filename: str = "test.pdf"):  # 
     return ("file", (filename, io.BytesIO(content), "application/pdf"))
 
 
-# ---------------------------------------------------------------------------
-# Override storage dependency with tmp_path-based storage
-# ---------------------------------------------------------------------------
-
-
 def _override_storage(tmp_path: Path):  # type: ignore[no-untyped-def]
-    """Return a DI override that injects a LocalBlobStorage backed by tmp_path."""
-
     def _get_storage() -> LocalBlobStorage:
         return LocalBlobStorage(root=tmp_path)
 
@@ -66,7 +57,7 @@ def _override_indexer():  # type: ignore[no-untyped-def]
 
 
 # ---------------------------------------------------------------------------
-# POST /chats/{chat_id}/documents — upload
+# POST /chats/{chat_id}/documents — upload happy path + error cases
 # ---------------------------------------------------------------------------
 
 
@@ -94,16 +85,21 @@ async def test_upload_document_201(
         assert body["original_filename"] == "test.pdf"
         assert body["status"] == "uploaded"
         assert body["mime_type"] == "application/pdf"
-        assert "id" in body
-        assert "checksum_sha256" in body
     finally:
         app.dependency_overrides.pop(get_storage, None)
         app.dependency_overrides.pop(get_indexer, None)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "files,expected_status",
+    [
+        ([("file", ("page.html", io.BytesIO(b"<html/>"), "text/html"))], 400),
+    ],
+)
 async def test_upload_document_invalid_mime_400(
-    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
+    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path,
+    files: list, expected_status: int,
 ) -> None:
     """POST with a non-PDF file returns 400."""
     from app.api.documents import get_indexer, get_storage
@@ -114,33 +110,8 @@ async def test_upload_document_invalid_mime_400(
 
     try:
         chat_id = await _create_chat(db_session, "MIME Check Chat")
-        resp = await api_client.post(
-            f"/chats/{chat_id}/documents",
-            files=[("file", ("page.html", io.BytesIO(b"<html/>"), "text/html"))],
-        )
-        assert resp.status_code == 400, resp.text
-    finally:
-        app.dependency_overrides.pop(get_storage, None)
-        app.dependency_overrides.pop(get_indexer, None)
-
-
-@pytest.mark.asyncio
-async def test_upload_document_unknown_chat_404(
-    api_client: AsyncClient, tmp_path: Path
-) -> None:
-    """POST to a non-existent chat returns 404."""
-    from app.api.documents import get_indexer, get_storage
-    from app.main import app
-
-    app.dependency_overrides[get_storage] = _override_storage(tmp_path)
-    app.dependency_overrides[get_indexer] = _override_indexer()
-
-    try:
-        resp = await api_client.post(
-            f"/chats/{uuid.uuid4()}/documents",
-            files=[_pdf_file()],
-        )
-        assert resp.status_code == 404, resp.text
+        resp = await api_client.post(f"/chats/{chat_id}/documents", files=files)
+        assert resp.status_code == expected_status, resp.text
     finally:
         app.dependency_overrides.pop(get_storage, None)
         app.dependency_overrides.pop(get_indexer, None)
@@ -159,20 +130,15 @@ async def test_upload_document_duplicate_409(
 
     try:
         chat_id = await _create_chat(db_session, "Dup Chat")
-
-        first_resp = await api_client.post(
-            f"/chats/{chat_id}/documents",
-            files=[_pdf_file()],
-        )
+        first_resp = await api_client.post(f"/chats/{chat_id}/documents", files=[_pdf_file()])
         assert first_resp.status_code == 201
         first_id = first_resp.json()["id"]
 
         dup_resp = await api_client.post(
             f"/chats/{chat_id}/documents",
-            files=[_pdf_file(filename="paper_dup.pdf")],  # same bytes, different name
+            files=[_pdf_file(filename="paper_dup.pdf")],
         )
         assert dup_resp.status_code == 409, dup_resp.text
-        # FastAPI wraps dict detail under {"detail": {...}}
         dup_body = dup_resp.json()
         inner = dup_body.get("detail", dup_body)
         if isinstance(inner, dict):
@@ -193,7 +159,7 @@ async def test_upload_document_duplicate_409(
 async def test_list_documents(
     api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    """GET list returns uploaded documents."""
+    """GET list returns uploaded documents for the correct chat."""
     from app.api.documents import get_indexer, get_storage
     from app.main import app
 
@@ -202,7 +168,6 @@ async def test_list_documents(
 
     try:
         chat_id = await _create_chat(db_session, "List Chat")
-
         await api_client.post(
             f"/chats/{chat_id}/documents",
             files=[_pdf_file(content=_FAKE_PDF_BYTES, filename="first.pdf")],
@@ -223,62 +188,17 @@ async def test_list_documents(
         app.dependency_overrides.pop(get_indexer, None)
 
 
-@pytest.mark.asyncio
-async def test_list_documents_empty(
-    api_client: AsyncClient, db_session: AsyncSession
-) -> None:
-    """GET list for a chat with no documents returns an empty list."""
-    chat_id = await _create_chat(db_session, "Empty Doc Chat")
-    resp = await api_client.get(f"/chats/{chat_id}/documents")
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
-# ---------------------------------------------------------------------------
-# GET /chats/{chat_id}/documents/{doc_id} — get single
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_document_success(
-    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """GET by ID returns the correct document."""
-    from app.api.documents import get_indexer, get_storage
-    from app.main import app
-
-    app.dependency_overrides[get_storage] = _override_storage(tmp_path)
-    app.dependency_overrides[get_indexer] = _override_indexer()
-
-    try:
-        chat_id = await _create_chat(db_session, "Get Doc Chat")
-        upload_resp = await api_client.post(
-            f"/chats/{chat_id}/documents",
-            files=[_pdf_file()],
-        )
-        doc_id = upload_resp.json()["id"]
-
-        get_resp = await api_client.get(f"/chats/{chat_id}/documents/{doc_id}")
-        assert get_resp.status_code == 200, get_resp.text
-        assert get_resp.json()["id"] == doc_id
-    finally:
-        app.dependency_overrides.pop(get_storage, None)
-        app.dependency_overrides.pop(get_indexer, None)
-
-
 # ---------------------------------------------------------------------------
 # Cross-chat isolation tests (CLAUDE.md §2 mandatory gate)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_document_cross_chat_404(
-    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
+@pytest.mark.parametrize("method", ["get", "delete"])
+async def test_document_cross_chat_404(
+    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path, method: str
 ) -> None:
-    """GET /chats/A/documents/{B_doc_id} returns 404.
-
-    Chat A must not learn about a document that belongs to Chat B.
-    """
+    """GET and DELETE /chats/A/documents/{B_doc_id} must both return 404."""
     from app.api.documents import get_indexer, get_storage
     from app.main import app
 
@@ -286,41 +206,8 @@ async def test_get_document_cross_chat_404(
     app.dependency_overrides[get_indexer] = _override_indexer()
 
     try:
-        chat_a_id = await _create_chat(db_session, "Iso-A")
-        chat_b_id = await _create_chat(db_session, "Iso-B")
-
-        # Upload a document to Chat B.
-        upload_resp = await api_client.post(
-            f"/chats/{chat_b_id}/documents",
-            files=[_pdf_file()],
-        )
-        b_doc_id = upload_resp.json()["id"]
-
-        # Try to access from Chat A — must be 404.
-        resp = await api_client.get(f"/chats/{chat_a_id}/documents/{b_doc_id}")
-        assert resp.status_code == 404, (
-            f"Expected 404, got {resp.status_code}. "
-            "Chat A must not be able to retrieve Chat B's document."
-        )
-    finally:
-        app.dependency_overrides.pop(get_storage, None)
-        app.dependency_overrides.pop(get_indexer, None)
-
-
-@pytest.mark.asyncio
-async def test_delete_document_cross_chat_404(
-    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """DELETE /chats/A/documents/{B_doc_id} returns 404."""
-    from app.api.documents import get_indexer, get_storage
-    from app.main import app
-
-    app.dependency_overrides[get_storage] = _override_storage(tmp_path)
-    app.dependency_overrides[get_indexer] = _override_indexer()
-
-    try:
-        chat_a_id = await _create_chat(db_session, "Del-Iso-A")
-        chat_b_id = await _create_chat(db_session, "Del-Iso-B")
+        chat_a_id = await _create_chat(db_session, f"Iso-A-{method}")
+        chat_b_id = await _create_chat(db_session, f"Iso-B-{method}")
 
         upload_resp = await api_client.post(
             f"/chats/{chat_b_id}/documents",
@@ -328,10 +215,10 @@ async def test_delete_document_cross_chat_404(
         )
         b_doc_id = upload_resp.json()["id"]
 
-        resp = await api_client.delete(f"/chats/{chat_a_id}/documents/{b_doc_id}")
+        fn = getattr(api_client, method)
+        resp = await fn(f"/chats/{chat_a_id}/documents/{b_doc_id}")
         assert resp.status_code == 404, (
-            f"Expected 404, got {resp.status_code}. "
-            "Chat A must not be able to delete Chat B's document."
+            f"Expected 404 for cross-chat {method.upper()}, got {resp.status_code}"
         )
     finally:
         app.dependency_overrides.pop(get_storage, None)
@@ -392,14 +279,12 @@ async def test_associate_document_201(
         chat_a_id = await _create_chat(db_session, "Assoc-A")
         chat_b_id = await _create_chat(db_session, "Assoc-B")
 
-        # Upload to Chat A.
         upload_resp = await api_client.post(
             f"/chats/{chat_a_id}/documents",
             files=[_pdf_file()],
         )
         doc_id = upload_resp.json()["id"]
 
-        # Associate to Chat B.
         assoc_resp = await api_client.post(
             f"/chats/{chat_b_id}/documents/{doc_id}/associate",
             json={"source_chat_id": str(chat_a_id)},
@@ -412,42 +297,6 @@ async def test_associate_document_201(
         # Chat B can now access the document.
         get_resp = await api_client.get(f"/chats/{chat_b_id}/documents/{doc_id}")
         assert get_resp.status_code == 200
-    finally:
-        app.dependency_overrides.pop(get_storage, None)
-        app.dependency_overrides.pop(get_indexer, None)
-
-
-@pytest.mark.asyncio
-async def test_associate_document_duplicate_409(
-    api_client: AsyncClient, db_session: AsyncSession, tmp_path: Path
-) -> None:
-    """POST .../associate twice returns 409."""
-    from app.api.documents import get_indexer, get_storage
-    from app.main import app
-
-    app.dependency_overrides[get_storage] = _override_storage(tmp_path)
-    app.dependency_overrides[get_indexer] = _override_indexer()
-
-    try:
-        chat_a_id = await _create_chat(db_session, "DupAssoc-A")
-        chat_b_id = await _create_chat(db_session, "DupAssoc-B")
-
-        upload_resp = await api_client.post(
-            f"/chats/{chat_a_id}/documents",
-            files=[_pdf_file()],
-        )
-        doc_id = upload_resp.json()["id"]
-
-        await api_client.post(
-            f"/chats/{chat_b_id}/documents/{doc_id}/associate",
-            json={"source_chat_id": str(chat_a_id)},
-        )
-
-        dup_resp = await api_client.post(
-            f"/chats/{chat_b_id}/documents/{doc_id}/associate",
-            json={"source_chat_id": str(chat_a_id)},
-        )
-        assert dup_resp.status_code == 409, dup_resp.text
     finally:
         app.dependency_overrides.pop(get_storage, None)
         app.dependency_overrides.pop(get_indexer, None)

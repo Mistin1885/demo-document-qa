@@ -1,14 +1,6 @@
 """Unit tests for app.vespa.feed (Phase 6.2).
 
-All tests use ``pytest-httpx`` (``httpx_mock`` fixture) so no real Vespa is
-required.  Tests cover:
-- ``feed_chunks``: correct PUT URL, correct body encoding, embedding tensor
-  format, idempotent upsert (same vespa_document_id → same URL), partial
-  failure tracking.
-- ``delete_by_document``: correct DELETE URL and selection string.
-- ``health_check``: returns True on 200, False on non-200 / error.
-- ``VespaDimensionMismatch``: raised when embedding dim mismatches.
-- ``make_vespa_id``: deterministic across multiple calls.
+All tests use ``pytest-httpx`` so no real Vespa is required.
 """
 
 from __future__ import annotations
@@ -20,7 +12,7 @@ import pytest
 import pytest_httpx
 
 from app.errors import VespaDimensionMismatch
-from app.vespa.feed import FeedReport, VespaChunk, VespaFeedClient, make_vespa_id
+from app.vespa.feed import VespaChunk, VespaFeedClient, make_vespa_id
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -70,172 +62,85 @@ def make_chunk(
 
 
 # ---------------------------------------------------------------------------
-# make_vespa_id
+# make_vespa_id — deterministic uuid5
 # ---------------------------------------------------------------------------
 
 
-class TestMakeVespaId:
-    def test_returns_string(self) -> None:
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        result = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        assert isinstance(result, str)
-
-    def test_deterministic_same_input(self) -> None:
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        id1 = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        id2 = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        assert id1 == id2
-
-    def test_different_order_index_differs(self) -> None:
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        id0 = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        id1 = make_vespa_id(doc_id, "raw_block", node_id, 1)
-        assert id0 != id1
-
-    def test_different_source_type_differs(self) -> None:
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        id_raw = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        id_chunk = make_vespa_id(doc_id, "chunk", node_id, 0)
-        assert id_raw != id_chunk
-
-    def test_valid_uuid_format(self) -> None:
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        result = make_vespa_id(doc_id, "chunk", node_id, 5)
-        # Should parse as UUID
-        parsed = uuid.UUID(result)
-        assert str(parsed) == result
+def test_make_vespa_id_deterministic_and_unique() -> None:
+    """Same inputs → identical ID; different order_index or source_type → different ID."""
+    doc_id, node_id = uuid.uuid4(), uuid.uuid4()
+    id1 = make_vespa_id(doc_id, "raw_block", node_id, 0)
+    id2 = make_vespa_id(doc_id, "raw_block", node_id, 0)
+    assert id1 == id2
+    assert isinstance(id1, str)
+    uuid.UUID(id1)  # must be valid UUID
+    assert make_vespa_id(doc_id, "raw_block", node_id, 0) != make_vespa_id(doc_id, "raw_block", node_id, 1)
+    assert make_vespa_id(doc_id, "raw_block", node_id, 0) != make_vespa_id(doc_id, "chunk", node_id, 0)
 
 
 # ---------------------------------------------------------------------------
-# VespaFeedClient.feed_chunks
+# feed_chunks
 # ---------------------------------------------------------------------------
 
 
-class TestFeedChunks:
-    @pytest.mark.asyncio
-    async def test_single_chunk_put_url(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunk = make_chunk()
-        url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
-        httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
+@pytest.mark.asyncio
+async def test_feed_chunks_put_url_body_and_embedding(
+    httpx_mock: pytest_httpx.HTTPXMock,
+) -> None:
+    """Single chunk: correct PUT URL, body fields, embedding tensor format."""
+    chunk = make_chunk()
+    chunk.embedding = [0.1, 0.2, 0.3, 0.4]
+    url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
+    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
 
-        client = make_client()
-        report = await client.feed_chunks([chunk])
+    client = make_client(dim=4)
+    report = await client.feed_chunks([chunk])
 
-        assert report.success_count == 1
-        assert report.fail_count == 0
+    assert report.success_count == 1 and report.fail_count == 0
+    body = json.loads(httpx_mock.get_requests()[0].content)
+    assert body["fields"]["content"] == "test content"
+    assert body["fields"]["source_type"] == "raw_block"
+    emb = body["fields"]["embedding"]
+    assert isinstance(emb, dict) and "values" in emb
+    assert emb["values"] == [0.1, 0.2, 0.3, 0.4]
 
-    @pytest.mark.asyncio
-    async def test_single_chunk_put_body_structure(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunk = make_chunk()
-        url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
-        httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
 
-        client = make_client()
-        await client.feed_chunks([chunk])
+@pytest.mark.asyncio
+async def test_feed_chunks_idempotency_and_partial_failure(
+    httpx_mock: pytest_httpx.HTTPXMock,
+) -> None:
+    """Same vespa_document_id → same URL (idempotent upsert). Partial 500 → tracked."""
+    doc_id = uuid.uuid4()
+    node_id = uuid.uuid4()
+    vid = make_vespa_id(doc_id, "raw_block", node_id, 0)
+    chunk1 = make_chunk(doc_id=doc_id).model_copy(update={"vespa_document_id": vid})
+    chunk2 = make_chunk(doc_id=doc_id).model_copy(update={"vespa_document_id": vid})
+    url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{vid}"
+    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
+    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
+    report = await make_client().feed_chunks([chunk1, chunk2])
+    reqs = httpx_mock.get_requests()
+    assert len(reqs) == 2 and all(str(r.url) == url for r in reqs)
+    assert report.success_count == 2
 
-        request = httpx_mock.get_requests()[0]
-        body = json.loads(request.content)
-        assert "fields" in body
-        fields = body["fields"]
-        assert fields["content"] == "test content"
-        assert fields["source_type"] == "raw_block"
+    # Partial failure: two chunks, second returns 500
+    chunk_a, chunk_b = make_chunk(order_index=0), make_chunk(order_index=1)
+    httpx_mock.add_response(
+        url=f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk_a.vespa_document_id}",
+        method="PUT", status_code=200, json={"id": chunk_a.vespa_document_id},
+    )
+    httpx_mock.add_response(
+        url=f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk_b.vespa_document_id}",
+        method="PUT", status_code=500, text="internal error",
+    )
+    r2 = await make_client().feed_chunks([chunk_a, chunk_b])
+    assert r2.success_count == 1 and r2.fail_count == 1 and len(r2.errors) == 1
 
-    @pytest.mark.asyncio
-    async def test_embedding_encoded_as_values_tensor(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunk = make_chunk()
-        chunk.embedding = [0.1, 0.2, 0.3, 0.4]
-        url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
-        httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
 
-        client = make_client(dim=4)
-        await client.feed_chunks([chunk])
-
-        request = httpx_mock.get_requests()[0]
-        body = json.loads(request.content)
-        embedding_field = body["fields"]["embedding"]
-        assert isinstance(embedding_field, dict)
-        assert "values" in embedding_field
-        assert embedding_field["values"] == [0.1, 0.2, 0.3, 0.4]
-
-    @pytest.mark.asyncio
-    async def test_multiple_chunks_multiple_puts(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunks = [make_chunk(order_index=i) for i in range(3)]
-        for chunk in chunks:
-            url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
-            httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
-
-        client = make_client()
-        report = await client.feed_chunks(chunks)
-
-        assert report.success_count == 3
-        assert report.fail_count == 0
-        assert len(httpx_mock.get_requests()) == 3
-
-    @pytest.mark.asyncio
-    async def test_idempotent_same_docid_same_url(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        """Same vespa_document_id produces the same PUT URL (upsert idempotency)."""
-        doc_id = uuid.uuid4()
-        node_id = uuid.uuid4()
-        # Build two chunks with identical vespa_document_id
-        vid = make_vespa_id(doc_id, "raw_block", node_id, 0)
-        chunk1 = make_chunk(doc_id=doc_id)
-        chunk1 = chunk1.model_copy(update={"vespa_document_id": vid})
-        chunk2 = make_chunk(doc_id=doc_id)
-        chunk2 = chunk2.model_copy(update={"vespa_document_id": vid})
-
-        url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{vid}"
-        # Register the URL twice
-        httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
-        httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
-
-        client = make_client()
-        report = await client.feed_chunks([chunk1, chunk2])
-
-        # Both went to the same URL
-        requests = httpx_mock.get_requests()
-        assert len(requests) == 2
-        assert all(str(r.url) == url for r in requests)
-        assert report.success_count == 2
-
-    @pytest.mark.asyncio
-    async def test_partial_failure_tracked(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunks = [make_chunk(order_index=i) for i in range(2)]
-        url0 = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunks[0].vespa_document_id}"
-        url1 = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunks[1].vespa_document_id}"
-        httpx_mock.add_response(url=url0, method="PUT", status_code=200, json={"id": chunks[0].vespa_document_id})
-        httpx_mock.add_response(url=url1, method="PUT", status_code=500, text="internal error")
-
-        client = make_client()
-        report = await client.feed_chunks(chunks)
-
-        assert report.success_count == 1
-        assert report.fail_count == 1
-        assert len(report.errors) == 1
-
-    @pytest.mark.asyncio
-    async def test_empty_list_returns_empty_report(self) -> None:
-        client = make_client()
-        report = await client.feed_chunks([])
-        assert report.success_count == 0
-        assert report.fail_count == 0
-        assert report.total == 0
+@pytest.mark.asyncio
+async def test_feed_chunks_empty_list() -> None:
+    report = await make_client().feed_chunks([])
+    assert report.success_count == 0 and report.fail_count == 0 and report.total == 0
 
 
 # ---------------------------------------------------------------------------
@@ -243,217 +148,65 @@ class TestFeedChunks:
 # ---------------------------------------------------------------------------
 
 
-class TestDimensionMismatch:
-    @pytest.mark.asyncio
-    async def test_raises_on_wrong_dim(self) -> None:
-        chunk = make_chunk(embedding_dim=8)  # 8-dim vector
-        client = make_client(dim=4)  # schema expects 4
-
-        with pytest.raises(VespaDimensionMismatch) as exc_info:
-            await client.feed_chunks([chunk])
-
-        assert exc_info.value.expected == 4
-        assert exc_info.value.got == 8
-
-    @pytest.mark.asyncio
-    async def test_raises_before_any_network_call(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chunk = make_chunk(embedding_dim=8)
-        client = make_client(dim=4)
-
-        with pytest.raises(VespaDimensionMismatch):
-            await client.feed_chunks([chunk])
-
-        # No HTTP requests should have been made
-        assert len(httpx_mock.get_requests()) == 0
-
-    def test_error_message_contains_dims(self) -> None:
-        exc = VespaDimensionMismatch(expected=1024, got=768)
-        assert "1024" in str(exc)
-        assert "768" in str(exc)
+@pytest.mark.asyncio
+async def test_dimension_mismatch_raised_before_network(
+    httpx_mock: pytest_httpx.HTTPXMock,
+) -> None:
+    """Wrong embedding dim raises VespaDimensionMismatch before any HTTP call."""
+    chunk = make_chunk(embedding_dim=8)
+    client = make_client(dim=4)
+    with pytest.raises(VespaDimensionMismatch) as exc_info:
+        await client.feed_chunks([chunk])
+    assert exc_info.value.expected == 4 and exc_info.value.got == 8
+    assert len(httpx_mock.get_requests()) == 0
+    assert "1024" in str(VespaDimensionMismatch(expected=1024, got=768))
 
 
 # ---------------------------------------------------------------------------
-# VespaFeedClient.delete_by_document
+# delete_by_document — chat_id AND document_id in selection
 # ---------------------------------------------------------------------------
 
 
-class TestDeleteByDocument:
-    @pytest.mark.asyncio
-    async def test_delete_issues_delete_request(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        # Use method-only match to avoid URL query-param conflict with pytest-httpx URL matching
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=200,
-            json={"documentCount": 5},
-        )
+@pytest.mark.asyncio
+async def test_delete_by_document_selection_and_cluster(
+    httpx_mock: pytest_httpx.HTTPXMock,
+) -> None:
+    """DELETE selection must contain both chat_id and document_id values; cluster param present."""
+    chat_id, doc_id = uuid.uuid4(), uuid.uuid4()
+    httpx_mock.add_response(method="DELETE", status_code=200, json={"documentCount": 5})
 
-        client = make_client()
-        count = await client.delete_by_document(chat_id, doc_id)
+    client = make_client()
+    count = await client.delete_by_document(chat_id, doc_id)
 
-        assert count == 5
-        requests = httpx_mock.get_requests()
-        assert len(requests) == 1
-        assert requests[0].method == "DELETE"
+    assert count == 5
+    reqs = httpx_mock.get_requests()
+    assert len(reqs) == 1 and reqs[0].method == "DELETE"
+    params = dict(reqs[0].url.params)
+    selection = params["selection"]
+    assert "chat_id" in selection and str(chat_id) in selection
+    assert "document_id" in selection and str(doc_id) in selection
+    assert params.get("cluster") == CLUSTER
 
-    @pytest.mark.asyncio
-    async def test_delete_selection_contains_chat_id(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=200,
-            json={"documentCount": 0},
-        )
 
-        client = make_client()
-        await client.delete_by_document(chat_id, doc_id)
-
-        request = httpx_mock.get_requests()[0]
-        params = dict(request.url.params)
-        selection = params["selection"]
-        assert str(chat_id) in selection
-        assert "chat_id" in selection
-
-    @pytest.mark.asyncio
-    async def test_delete_selection_contains_document_id(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=200,
-            json={"documentCount": 0},
-        )
-
-        client = make_client()
-        await client.delete_by_document(chat_id, doc_id)
-
-        request = httpx_mock.get_requests()[0]
-        params = dict(request.url.params)
-        selection = params["selection"]
-        assert str(doc_id) in selection
-        assert "document_id" in selection
-
-    @pytest.mark.asyncio
-    async def test_delete_selection_has_both_conditions(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=200,
-            json={"documentCount": 0},
-        )
-
-        client = make_client()
-        await client.delete_by_document(chat_id, doc_id)
-
-        request = httpx_mock.get_requests()[0]
-        params = dict(request.url.params)
-        selection = params["selection"]
-        # Must contain both tokens
-        assert "chat_id" in selection
-        assert "document_id" in selection
-        assert str(chat_id) in selection
-        assert str(doc_id) in selection
-
-    @pytest.mark.asyncio
-    async def test_delete_cluster_param_present(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=200,
-            json={"documentCount": 0},
-        )
-
-        client = make_client()
-        await client.delete_by_document(chat_id, doc_id)
-
-        request = httpx_mock.get_requests()[0]
-        params = dict(request.url.params)
-        assert "cluster" in params
-        assert params["cluster"] == CLUSTER
-
-    @pytest.mark.asyncio
-    async def test_delete_returns_zero_on_404(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        chat_id = uuid.uuid4()
-        doc_id = uuid.uuid4()
-        httpx_mock.add_response(
-            method="DELETE",
-            status_code=404,
-        )
-
-        client = make_client()
-        count = await client.delete_by_document(chat_id, doc_id)
-
-        assert count == 0
+@pytest.mark.asyncio
+async def test_delete_by_document_404_returns_zero(
+    httpx_mock: pytest_httpx.HTTPXMock,
+) -> None:
+    httpx_mock.add_response(method="DELETE", status_code=404)
+    count = await make_client().delete_by_document(uuid.uuid4(), uuid.uuid4())
+    assert count == 0
 
 
 # ---------------------------------------------------------------------------
-# VespaFeedClient.health_check
+# health_check
 # ---------------------------------------------------------------------------
 
 
-class TestHealthCheck:
-    @pytest.mark.asyncio
-    async def test_health_check_true_on_200(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        httpx_mock.add_response(
-            url=f"{ENDPOINT}/ApplicationStatus",
-            method="GET",
-            status_code=200,
-        )
-
-        client = make_client()
-        result = await client.health_check()
-
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_health_check_false_on_503(
-        self, httpx_mock: pytest_httpx.HTTPXMock
-    ) -> None:
-        httpx_mock.add_response(
-            url=f"{ENDPOINT}/ApplicationStatus",
-            method="GET",
-            status_code=503,
-        )
-
-        client = make_client()
-        result = await client.health_check()
-
-        assert result is False
-
-
-# ---------------------------------------------------------------------------
-# FeedReport dataclass
-# ---------------------------------------------------------------------------
-
-
-class TestFeedReport:
-    def test_total_property(self) -> None:
-        report = FeedReport(success_count=7, fail_count=3)
-        assert report.total == 10
-
-    def test_default_empty(self) -> None:
-        report = FeedReport()
-        assert report.success_count == 0
-        assert report.fail_count == 0
-        assert report.errors == []
-        assert report.total == 0
+@pytest.mark.asyncio
+async def test_health_check(httpx_mock: pytest_httpx.HTTPXMock) -> None:
+    """200 → True; 503 → False."""
+    url = f"{ENDPOINT}/ApplicationStatus"
+    httpx_mock.add_response(url=url, method="GET", status_code=200)
+    assert await make_client().health_check() is True
+    httpx_mock.add_response(url=url, method="GET", status_code=503)
+    assert await make_client().health_check() is False

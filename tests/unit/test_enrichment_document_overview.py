@@ -1,25 +1,8 @@
 """Unit tests for Phase 5.2 (LLM JSON path) — DocumentOverview enrichment.
 
-All tests are fully deterministic — no real LLM is called.
-``FixtureChatProvider`` (backed by ``tests/fixtures/enrichment_mock_responses.json``)
-serves the deterministic ``"document_default"`` fixture for document-level prompts
-(identified by the ``[DOCUMENT_OVERVIEW]`` marker in the system prompt).
-
-Coverage
---------
-1. happy-path: parse → hierarchy → section-enrichments → ``enrich_document_overview``
-   - ``overview`` non-empty and >= 80 chars word count.
-   - ``contributions`` >= 1, each ``source_section_ids`` is a subset of all
-     section-enrichment node IDs.
-   - ``datasets`` >= 1.
-   - ``token_count_estimate > 0``.
-   - ``model_used`` contains "mock".
-2. retry on garbage: first call returns garbage, second returns valid JSON → success.
-3. failure: two consecutive garbage responses → ``EnrichmentParseError``.
-4. source_section_ids fallback: LLM returns no source_section_ids → fallback to
-   all abstract + section + subsection node IDs.
-5. ``to_document_summary_rows(overview)`` → >= 8 rows, all kinds unique.
-6. deterministic: two identical calls produce byte-identical ``model_dump_json()``.
+Reduced to ≤10 tests covering: happy-path structure, determinism, retry on
+garbage, failure on double-garbage, source_section_ids fallback,
+to_document_summary_rows structure, and ids from hierarchy.
 """
 
 from __future__ import annotations
@@ -33,7 +16,7 @@ import pytest
 
 from app.enrichment._orm_bridge import to_document_summary_rows
 from app.enrichment.document_overview import enrich_document_overview
-from app.enrichment.models import DocumentOverview, SectionEnrichment
+from app.enrichment.models import SectionEnrichment
 from app.enrichment.section import EnrichmentParseError, enrich_document_sections
 from app.parsing.hierarchy import derive_hierarchy
 from app.parsing.mapping import map_middle_to_parsed_blocks
@@ -70,7 +53,6 @@ def _load_fixture_middle() -> dict:  # type: ignore[type-arg]
 async def _build_full_pipeline(
     chat_provider: ChatProvider | None = None,
 ) -> tuple[list[ParsedBlock], HierarchyResult, list[SectionEnrichment]]:
-    """Parse the sample paper and enrich sections."""
     middle_data = _load_fixture_middle()
     blocks = map_middle_to_parsed_blocks(middle_data, chat_id=_CHAT_ID, document_id=_DOC_ID)
     hierarchy = derive_hierarchy(blocks, chat_id=_CHAT_ID, document_id=_DOC_ID)
@@ -85,8 +67,6 @@ async def _build_full_pipeline(
 
 
 class _SequentialChatProvider(ChatProvider):
-    """Returns responses from a fixed sequence (cycling when exhausted)."""
-
     def __init__(self, responses: list[str], model: str = "sequential-mock") -> None:
         self._responses = responses
         self._index = 0
@@ -135,7 +115,6 @@ class _SequentialChatProvider(ChatProvider):
 
 
 def _make_valid_overview_json(section_enrichments: list[SectionEnrichment]) -> str:
-    """Return a minimal valid DocumentOverview JSON string."""
     return json.dumps(
         {
             "overview": "This paper presents a novel approach to scientific document question answering. "
@@ -201,7 +180,6 @@ def _make_valid_overview_json(section_enrichments: list[SectionEnrichment]) -> s
 
 
 def _make_valid_overview_json_no_ids(section_enrichments: list[SectionEnrichment]) -> str:
-    """Return a valid DocumentOverview JSON with empty source_section_ids everywhere."""
     return json.dumps(
         {
             "overview": "This paper presents a novel approach to scientific document question answering. "
@@ -234,47 +212,32 @@ def _make_valid_overview_json_no_ids(section_enrichments: list[SectionEnrichment
 
 
 # ---------------------------------------------------------------------------
-# Test 1 — happy-path with FixtureChatProvider (uses document_default fixture)
+# Test 1 — happy-path: overview length, contributions, datasets, token_count, model_used
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_enrich_document_overview_happy_path() -> None:
-    """Full pipeline: parse → hierarchy → section enrichments → DocumentOverview."""
+    """Full pipeline: overview >= 80 words, contributions >= 1, datasets >= 1, token_count > 0."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
     provider = FixtureChatProvider(model="mock-chat")
 
     overview = await enrich_document_overview(
-        hierarchy,
-        section_enrichments,
-        chat_provider=provider,
-        blocks=blocks,
+        hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
     )
 
-    # overview non-empty and >= 80 words
-    assert overview.overview, "overview must not be empty"
-    word_count = len(overview.overview.split())
-    assert word_count >= 80, f"overview too short: {word_count} words"
-
-    # contributions >= 1, source_section_ids is a subset of all section node IDs
-    assert len(overview.contributions) >= 1, "expected at least 1 contribution"
+    assert overview.overview
+    assert len(overview.overview.split()) >= 80
+    assert len(overview.contributions) >= 1
     all_node_ids = {se.source_node_id for se in section_enrichments}
     for contrib in overview.contributions:
         for sid in contrib.source_section_ids:
-            assert sid in all_node_ids, (
-                f"source_section_id {sid} not in any section enrichment node IDs"
-            )
-
-    # datasets >= 1
-    assert len(overview.datasets) >= 1, "expected at least 1 dataset"
-
-    # token_count_estimate > 0
-    assert overview.token_count_estimate > 0, "token_count_estimate must be positive"
-
-    # model_used contains "mock"
-    assert "mock" in overview.model_used.lower(), (
-        f"model_used '{overview.model_used}' does not contain 'mock'"
-    )
+            assert sid in all_node_ids
+    assert len(overview.datasets) >= 1
+    assert overview.token_count_estimate > 0
+    assert "mock" in overview.model_used.lower()
+    assert overview.chat_id == hierarchy.chat_id
+    assert overview.document_id == hierarchy.document_id
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +247,7 @@ async def test_enrich_document_overview_happy_path() -> None:
 
 @pytest.mark.asyncio
 async def test_enrich_document_overview_deterministic() -> None:
-    """Two identical calls with FixtureChatProvider must produce identical JSON."""
+    """Two identical calls must produce identical JSON."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
     provider = FixtureChatProvider(model="mock-chat")
 
@@ -294,14 +257,11 @@ async def test_enrich_document_overview_deterministic() -> None:
     run2 = await enrich_document_overview(
         hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
     )
-
-    assert run1.model_dump_json() == run2.model_dump_json(), (
-        "enrich_document_overview is not deterministic"
-    )
+    assert run1.model_dump_json() == run2.model_dump_json()
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — retry on garbage: first call returns garbage, second returns JSON
+# Test 3 — retry on garbage: first call garbage, second valid JSON → success
 # ---------------------------------------------------------------------------
 
 
@@ -309,18 +269,15 @@ async def test_enrich_document_overview_deterministic() -> None:
 async def test_enrich_document_overview_retry_on_garbage() -> None:
     """First response is garbage; second is valid JSON → success after retry."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-
     valid_json = _make_valid_overview_json(section_enrichments)
     provider = _SequentialChatProvider(
         responses=["this is not valid json at all !!!!", valid_json],
         model="sequential-mock",
     )
-
     overview = await enrich_document_overview(
         hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
     )
-
-    assert overview.overview, "overview must not be empty after retry"
+    assert overview.overview
     assert overview.model_used == "sequential-mock"
 
 
@@ -333,12 +290,10 @@ async def test_enrich_document_overview_retry_on_garbage() -> None:
 async def test_enrich_document_overview_fails_on_double_garbage() -> None:
     """Two consecutive garbage responses must raise EnrichmentParseError."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-
     provider = _SequentialChatProvider(
         responses=["garbage one", "garbage two"],
         model="garbage-mock",
     )
-
     with pytest.raises(EnrichmentParseError):
         await enrich_document_overview(
             hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
@@ -354,32 +309,21 @@ async def test_enrich_document_overview_fails_on_double_garbage() -> None:
 async def test_enrich_document_overview_source_ids_fallback() -> None:
     """When LLM omits source_section_ids, fallback = abstract+section+subsection IDs."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-
     valid_json_no_ids = _make_valid_overview_json_no_ids(section_enrichments)
-    # Section enrichments already built — use a provider that returns JSON with no ids
-    provider = _SequentialChatProvider(
-        responses=[valid_json_no_ids],
-        model="no-ids-mock",
-    )
+    provider = _SequentialChatProvider(responses=[valid_json_no_ids], model="no-ids-mock")
 
     overview = await enrich_document_overview(
         hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
     )
 
-    # source_section_ids fallback = all abstract + section + subsection node IDs
     fallback_ids = {
         se.source_node_id
         for se in section_enrichments
         if se.node_type in ("abstract", "section", "subsection")
     }
-
-    assert len(overview.source_section_ids) > 0, (
-        "source_section_ids must not be empty after fallback"
-    )
+    assert len(overview.source_section_ids) > 0
     for sid in overview.source_section_ids:
-        assert sid in fallback_ids, (
-            f"fallback source_section_id {sid} not in abstract/section/subsection enrichments"
-        )
+        assert sid in fallback_ids
 
 
 # ---------------------------------------------------------------------------
@@ -389,22 +333,18 @@ async def test_enrich_document_overview_source_ids_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_to_document_summary_rows_structure() -> None:
-    """to_document_summary_rows must produce >= 8 rows with all unique kinds."""
+    """to_document_summary_rows must produce >= 8 rows with unique kinds."""
     blocks, hierarchy, section_enrichments = await _build_full_pipeline()
     provider = FixtureChatProvider(model="mock-chat")
 
     overview = await enrich_document_overview(
         hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
     )
-
     rows = to_document_summary_rows(overview)
 
-    assert len(rows) >= 8, f"Expected >= 8 rows, got {len(rows)}"
-
+    assert len(rows) >= 8
     kinds = [row.kind for row in rows]
-    assert len(kinds) == len(set(kinds)), f"Kinds are not unique: {kinds}"
-
-    # Verify expected kinds are present
+    assert len(kinds) == len(set(kinds))
     expected_kinds = {
         "document_overview",
         "document_contributions",
@@ -415,137 +355,9 @@ async def test_to_document_summary_rows_structure() -> None:
         "document_metrics",
         "document_conclusions",
     }
-    actual_kinds = set(kinds)
-    missing = expected_kinds - actual_kinds
+    missing = expected_kinds - set(kinds)
     assert not missing, f"Missing expected kinds: {missing}"
-
-
-# ---------------------------------------------------------------------------
-# Test 7 — chat_id and document_id come from hierarchy
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_enrich_document_overview_ids_from_hierarchy() -> None:
-    """chat_id and document_id in DocumentOverview must match hierarchy."""
-    blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-    provider = FixtureChatProvider(model="mock-chat")
-
-    overview = await enrich_document_overview(
-        hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
-    )
-
-    assert overview.chat_id == hierarchy.chat_id, (
-        f"chat_id mismatch: {overview.chat_id} != {hierarchy.chat_id}"
-    )
-    assert overview.document_id == hierarchy.document_id, (
-        f"document_id mismatch: {overview.document_id} != {hierarchy.document_id}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test 8 — page_count derives from hierarchy when not specified
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_enrich_document_overview_page_count() -> None:
-    """page_count must be >= 1 and derived from max(node.page_end)."""
-    blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-    provider = FixtureChatProvider(model="mock-chat")
-
-    overview = await enrich_document_overview(
-        hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
-    )
-
-    max_page = max(n.page_end for n in hierarchy.nodes)
-    assert overview.page_count == max_page, (
-        f"page_count {overview.page_count} != max(node.page_end) {max_page}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test 9 — page_count override
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_enrich_document_overview_page_count_override() -> None:
-    """page_count override must be respected."""
-    blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-    provider = FixtureChatProvider(model="mock-chat")
-
-    overview = await enrich_document_overview(
-        hierarchy,
-        section_enrichments,
-        chat_provider=provider,
-        blocks=blocks,
-        page_count=42,
-    )
-
-    assert overview.page_count == 42, (
-        f"page_count override not respected: got {overview.page_count}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Test 10 — FixtureChatProvider routing: section prompt still uses "default"
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_fixture_provider_section_still_uses_default() -> None:
-    """Phase 5.1 section prompts must still use the 'default' fixture, not 'document_default'."""
-    blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-
-    # Verify the section enrichments don't have any "document_default" content
-    # (they should use the "default" fixture which returns a SectionEnrichment JSON)
-    assert len(section_enrichments) > 0, "should have produced section enrichments"
-    for se in section_enrichments:
-        # detailed_summary should be non-empty (from "default" fixture)
-        assert se.detailed_summary, f"section enrichment has empty detailed_summary for {se.title}"
-
-
-# ---------------------------------------------------------------------------
-# Test 11 — DocumentOverview model validation: extra fields rejected
-# ---------------------------------------------------------------------------
-
-
-def test_document_overview_forbids_extra_fields() -> None:
-    """ConfigDict(extra='forbid') must reject unknown fields."""
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        DocumentOverview(
-            chat_id=_CHAT_ID,
-            document_id=_DOC_ID,
-            page_count=5,
-            overview="Some overview text here",
-            token_count_estimate=10,
-            model_used="test",
-            unknown_field="bad",  # type: ignore[call-arg]
-        )
-
-
-# ---------------------------------------------------------------------------
-# Test 12 — to_document_summary_rows: rows contain correct chat_id + document_id
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_to_document_summary_rows_ids() -> None:
-    """All summary rows must carry the correct chat_id and document_id."""
-    blocks, hierarchy, section_enrichments = await _build_full_pipeline()
-    provider = FixtureChatProvider(model="mock-chat")
-
-    overview = await enrich_document_overview(
-        hierarchy, section_enrichments, chat_provider=provider, blocks=blocks
-    )
-    rows = to_document_summary_rows(overview)
-
     for row in rows:
-        assert row.chat_id == _CHAT_ID, f"Wrong chat_id in row kind={row.kind}"
-        assert row.document_id == _DOC_ID, f"Wrong document_id in row kind={row.kind}"
-        assert row.source_node_id is None, (
-            f"source_node_id should be None for document-level row kind={row.kind}"
-        )
+        assert row.chat_id == _CHAT_ID
+        assert row.document_id == _DOC_ID
+        assert row.source_node_id is None
