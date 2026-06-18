@@ -58,6 +58,22 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
 
+    # --- Env-level default LLM (used when a chat has no default_chat_profile) ---
+    # Lets you point the QA agent at a real LLM without inserting a
+    # provider_profiles row.  Mirrors OpenAICompatChatProvider parameters.
+    llm_provider: Literal["openai_compatible", "openai", "gemini_native", "mock"] = "mock"
+    llm_api_url: str | None = None
+    """Base URL of the OpenAI-compatible server (e.g. ``http://host:8599/v1``).
+
+    A trailing ``/chat/completions`` is stripped automatically because the
+    OpenAI SDK appends it.
+    """
+    llm_model: str | None = None
+    llm_api_key: SecretStr | None = None
+    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.0
+    llm_timeout: float = 60.0
+
     # --- Vespa embedding dimension (Phase 6 schema DIM) ---
     embedding_dim: int = 1024
 

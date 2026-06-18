@@ -38,6 +38,7 @@ from app.models.orm import Chat as ChatORM
 from app.models.orm import ProviderProfile as ProviderProfileORM
 from app.providers.base import ChatProvider, EmbeddingProvider
 from app.providers.mock import MockChatProvider
+from app.providers.openai_compat import OpenAICompatChatProvider
 from app.providers.registry import build_chat_provider, build_embedding_provider
 from app.retrieval.service import RetrievalService
 from app.services.qa_service import QAService
@@ -75,6 +76,43 @@ def _not_found(detail: str) -> HTTPException:
 # ---------------------------------------------------------------------------
 # Provider helpers — load real providers from Chat.default_*_profile
 # ---------------------------------------------------------------------------
+
+
+def _build_env_chat_provider() -> ChatProvider | None:
+    """Build a ChatProvider from env-level ``LLM_*`` settings, if configured.
+
+    Returns ``None`` when ``LLM_PROVIDER=mock`` (the default) or required fields
+    are missing, so the caller can fall back to ``MockChatProvider``.
+
+    ``LLM_API_URL`` is normalised: a trailing ``/chat/completions`` is stripped
+    because the OpenAI SDK appends that path itself.
+    """
+    settings = get_settings()
+    if settings.llm_provider == "mock":
+        return None
+    if settings.llm_provider != "openai_compatible":
+        # OpenAI native / Gemini native via env is not wired here yet; use DB
+        # provider_profiles for those.
+        return None
+    if not settings.llm_api_url or not settings.llm_model:
+        return None
+
+    base_url = settings.llm_api_url
+    for suffix in ("/chat/completions", "/chat/completions/"):
+        if base_url.endswith(suffix):
+            base_url = base_url[: -len(suffix)]
+            break
+    base_url = base_url.rstrip("/")
+
+    api_key = (
+        settings.llm_api_key.get_secret_value() if settings.llm_api_key is not None else ""
+    )
+    return OpenAICompatChatProvider(
+        api_key=api_key,
+        base_url=base_url,
+        model=settings.llm_model,
+        provider_name="env_openai_compat",
+    )
 
 
 def _profile_as_like(p: ProviderProfileORM, embedding_dim: int) -> object:
@@ -122,15 +160,19 @@ async def _build_providers(
     chat_orm = await _load_chat(db, chat_id)
 
     # --- chat (LLM) provider ---
+    # Resolution order:
+    #   1. Chat's default_chat_profile (DB-stored, encrypted key) — production path.
+    #   2. Env-level LLM_* settings — convenience for dev/demo without a DB row.
+    #   3. MockChatProvider — deterministic fallback (tests / unconfigured).
     chat_prov: ChatProvider
     if chat_orm is not None and chat_orm.default_chat_profile is not None:
         try:
             profile_like = _profile_as_like(chat_orm.default_chat_profile, settings.embedding_dim)
             chat_prov = build_chat_provider(profile_like)  # type: ignore[arg-type]
         except Exception:
-            chat_prov = MockChatProvider()
+            chat_prov = _build_env_chat_provider() or MockChatProvider()
     else:
-        chat_prov = MockChatProvider()
+        chat_prov = _build_env_chat_provider() or MockChatProvider()
 
     # --- retrieval service (Vespa + embedding provider) ---
     retrieval_svc: RetrievalService | NullRetrievalService
