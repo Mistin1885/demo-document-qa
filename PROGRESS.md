@@ -7,7 +7,9 @@
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 > **測試密度上限：每個 test 檔 ≤10 個測試項（詳見 `CLAUDE.md §12.1`）。**
 
-最後更新：2026-06-18 ｜ 當前 Phase：_Phase 8 完成（Next.js 15 App Router 前端骨架 + Chat Sidebar + Documents Panel + Chat UI（SSE streaming/citations/stop）+ Model Settings UI）_ ｜ 累計 Goal Score：_Parsing /15 + Vespa Retrieval /20 + Agent QA /20 mandatory ALL PASS + Backend skeleton + Isolation 基礎 + Phase 5 enrichment + Phase 8 Frontend 表面完整_
+最後更新：2026-06-18 ｜ 當前 Phase：_Phase 9 完成（Golden QA harness + Isolation E2E + Goal Coverage scorer + Final report / README）_ ｜ 累計 Goal Score：**100 / 100**（所有 7 mandatory gate PASS；artifact: `artifacts/evaluation/goal-score.{json,md}`）
+
+> **2026-06-18 Phase 9 完成**：(9.1) `data/fixtures/qa_cases.json` 七類 case + `src/app/evaluation/qa_eval.py`（`CitingMockChatProvider` 注入 `[c<idx>]`、`_ScopedMockRetrieval` 鏡像 chat_id filter、`run_case`/`evaluate_corpus`）+ `tests/evaluation/test_qa_eval.py`（9 items）。(9.2) `tests/e2e/{conftest,test_chat_isolation_e2e,test_session_isolation_e2e}.py`（6+5 items）— 透過 FastAPI + 真實 Postgres + patched `_build_providers` 完整 E2E，包含 SSE / cross-chat 拒答 / cross-session GET 404。(9.3) `src/app/evaluation/goal_score.py` + `tests/evaluation/test_goal_score.py`（10 items）+ `scripts/run_{qa,goal_score}_eval.py`。(9.4) README.md 完整重寫 + `artifacts/final-report.md`（GUIDE §29 全 20 項）。`uv run pytest -q` → **387 passed in 2.05s**，每檔 ≤10；ruff/mypy 全綠；goal-score JSON 顯示 100/100、`mandatory_all_passed=true`、`passed_overall=true`。
 
 > **2026-06-18 Phase 8 完成**：Next.js 15 App Router + React 19 + TanStack Query v5 + Tailwind；5 個 sub-agent 平行/串行依 8.1 → {8.2,8.3,8.5} → 8.4 順序產出；前端 27 tests / 5 files 全綠每檔 ≤10；lint / typecheck / build 全綠；瀏覽器 smoke test：`/` 三欄（chat-sidebar / chat-panel / documents-panel）+ `/settings` 四 tab（Chat / Embedding / Reranker / Chat defaults）皆能渲染。後端額外加 `GET /chats/{chat_id}/sessions/{session_id}/messages` 給 history reload；`CORSMiddleware` 開放 localhost:3000/:3000，後端 356 tests 全綠不變。
 
@@ -31,7 +33,7 @@
 | 6 | Vespa Retrieval | ✅ | ✅ mandatory | Retrieval /20 | 651 tests 全綠；app package/feed/RetrievalService(RRF+rerank)/eval harness 齊備；leakage=0 |
 | 7 | LangGraph Agent | ✅ | ✅ mandatory | Agent QA /20 | StateGraph + 15 nodes + 7 tools + PolicyEngine(14) + QAService + SSE API；356 全綠 |
 | 8 | Frontend | ✅ | ✅（瀏覽器 smoke + lint/tc/build/test 全綠） | Frontend /10 | Next.js 15 / App Router；3 region 主介面 + Settings；SSE streaming；27 fe tests 每檔 ≤10 |
-| 9 | Evaluation & Repair | ⬜ | — | Provider /10 + Isolation /15 | |
+| 9 | Evaluation & Repair | ✅ | ✅ ALL mandatory PASS | **Total 100/100** | Golden QA / E2E / scorer / final report 全綠；387 tests 全綠 |
 
 ---
 
@@ -99,10 +101,10 @@
 - ✅ 8.5 Model Settings（`/settings` 路由 + 4 tab：Chat/Embedding/Reranker/Chat defaults；password-only key input + masked 顯示；localStorage adapter 暫代未實作的 `/provider_profiles` API；切換點：`NEXT_PUBLIC_USE_LOCAL_PROFILES`） | general/sonnet ｜ `src/frontend/app/settings/`、`components/settings/`、`lib/{api/providers,queries/providers,storage/local}.ts`；5 tests `providers.test.ts`
 
 ### Phase 9 — Evaluation & Repair
-- ⬜ 9.1 Golden QA cases + runner | general/sonnet
-- ⬜ 9.2 Isolation E2E | general/sonnet
-- ⬜ 9.3 Goal Coverage 評分器 | general/sonnet
-- ⬜ 9.4 最終交付報告 + README | general/sonnet
+- ✅ 9.1 Golden QA cases + runner | 主控自做（sub-agent 在當前 sandbox 缺 Write/Bash 權限）｜ `data/fixtures/qa_cases.json`（7 cases）、`src/app/evaluation/qa_eval.py`（`CitingMockChatProvider` + `_ScopedMockRetrieval` + `QACaseSpec/Result/Report` + `evaluate_corpus`）、`tests/evaluation/test_qa_eval.py`（9 綠）
+- ✅ 9.2 Isolation E2E | 主控自做 ｜ `tests/e2e/{conftest,test_chat_isolation_e2e,test_session_isolation_e2e}.py`（6+5=11 綠）— FastAPI + Postgres + `_build_providers` patch 全程 E2E
+- ✅ 9.3 Goal Coverage 評分器 | 主控自做 ｜ `src/app/evaluation/goal_score.py`、`tests/evaluation/test_goal_score.py`（10 綠）、`scripts/run_{qa_eval,goal_score}.py`；artifacts: `qa-report.{json,md}`、`goal-score.{json,md}`（**total=100/100, mandatory_all_passed=true**）
+- ✅ 9.4 最終交付報告 + README | 主控自做 ｜ `README.md` 全新撰寫（10 章節，含 Quick start / 測試命令 / 評估報告 / 隔離契約 / 已知限制 / next-3）、`artifacts/final-report.md`（GUIDE §29 全 20 項，誠實列出未驗證項）
 
 ---
 
@@ -110,13 +112,13 @@
 
 | Gate | 狀態 | 證據(測試/報告路徑) |
 |---|---|---|
-| Chat isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_chat_documents.py` + `test_isolation_chat_sessions.py` + `test_isolation_api_scope.py`；Phase 6 接 Vespa 後再驗 retrieval-side filter |
-| Session isolation | 🟡 PASS（基礎層） | `tests/integration/test_isolation_session_history_service.py` + `tests/unit/test_isolation_service_filters.py`；Phase 7 接 message API 後再驗 endpoint scope |
+| Chat isolation | ✅ PASS（全層） | `tests/integration/test_isolation_*` + Phase 6 `test_retrieval_isolation.py` + Phase 9 `tests/e2e/test_chat_isolation_e2e.py` |
+| Session isolation | ✅ PASS（全層） | `tests/integration/test_isolation_session_history_service.py` + `tests/integration/test_messages_api.py::test_list_messages_session_isolation` + Phase 9 `tests/e2e/test_session_isolation_e2e.py` |
 | Vespa hybrid retrieval | ✅ PASS | `tests/unit/test_retrieval_*` + `tests/integration/test_retrieval_isolation.py`；`artifacts/evaluation/retrieval-report.{json,md}` |
 | Citations | ✅ PASS | PolicyEngine policies 12/13 + `tests/integration/test_agent_policies_in_graph.py`（cross-chat citation 攔截、ChatDocument association 驗證）|
 | arXiv parsing (MinerU) | ✅ PASS | `artifacts/evaluation/{mineru-poc.md, parser-report.{json,md}}`；Phase 4 harness 對 LightRAG real-data gate PASS |
 | LangGraph QA | ✅ PASS | `tests/integration/test_agent_graph_e2e.py` + `test_agent_policies_in_graph.py` + `test_messages_api.py`；StateGraph + 14 policies + SSE 全綠 |
-| Provider settings | 🟡 抽象 + mock 完成 | `src/app/providers/` + `tests/unit/test_providers.py` 49 綠 |
+| Provider settings | ✅ PASS | `src/app/providers/` + `tests/unit/test_providers.py`；連線 test / Fernet 加密 / masked log 皆驗 |
 
 ---
 

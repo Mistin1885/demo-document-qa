@@ -1,0 +1,132 @@
+{
+  "version": "1",
+  "description": "Golden QA evaluation cases (GUIDE §19). The runner deterministically maps chat/doc labels to UUIDs and replays each case against the LangGraph StateGraph with a mock RetrievalService. Each case asserts STRUCTURAL invariants (citation scope, documents_used, refusal phrase) — never the answer wording.",
+  "cases": [
+    {
+      "case_id": "global_summary_lightrag",
+      "kind": "global_summary",
+      "question": "List the main contributions of this paper from start to finish.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG introduces a graph-based retrieval-augmented generation framework that fuses entity-level and relation-level evidence to answer multi-hop questions over arXiv papers.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
+        {"chat_label": "A", "doc_label": "paper_a", "content": "The contributions include a dual-level retrieval mechanism, a graph indexer, and an incremental update protocol.", "page_start": 2, "page_end": 2, "source_type": "compact_section_summary"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": ["paper_a"],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "method_explanation_lightrag",
+      "kind": "method_explanation",
+      "question": "Describe the method and data flow proposed by the paper.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "The method first extracts entities and relations from each chunk, then constructs a graph index over the corpus.", "page_start": 3, "page_end": 3, "source_type": "chunk"},
+        {"chat_label": "A", "doc_label": "paper_a", "content": "At query time the system performs dual-level retrieval: low-level for entity facts and high-level for relational paths.", "page_start": 4, "page_end": 4, "source_type": "chunk"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": ["paper_a"],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "technical_comparison_lightrag_vs_naive",
+      "kind": "technical_comparison",
+      "question": "How does method A (LightRAG) differ from the naive RAG baseline?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG outperforms NaiveRAG on multi-hop benchmarks by leveraging graph-based context expansion.", "page_start": 5, "page_end": 5, "source_type": "claim"},
+        {"chat_label": "A", "doc_label": "paper_a", "content": "Naive RAG retrieves top-k chunks with BM25 and does not exploit relational structure between entities.", "page_start": 6, "page_end": 6, "source_type": "definition"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": ["paper_a"],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "performance_lightrag_metrics",
+      "kind": "performance",
+      "question": "Did method A beat method B on the reported tasks?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "On the MultiHopQA benchmark LightRAG achieves 73.4 F1 versus 61.0 F1 for NaiveRAG with the same embedding model.", "page_start": 7, "page_end": 7, "source_type": "performance_fact"},
+        {"chat_label": "A", "doc_label": "paper_a", "content": "The experimental setting uses 1000 queries, top-k=12, and identical chunking parameters for all baselines.", "page_start": 7, "page_end": 7, "source_type": "table_record"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": ["paper_a"],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "multi_document_three_papers",
+      "kind": "multi_document",
+      "question": "How do the retrieval strategies of the three papers in this chat differ?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "Paper A uses graph-based dual-level retrieval over entity and relation nodes.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
+        {"chat_label": "A", "doc_label": "paper_b", "content": "Paper B relies on dense vector retrieval with a cross-encoder reranker for the top 30 candidates.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
+        {"chat_label": "A", "doc_label": "paper_c", "content": "Paper C combines BM25 with neural query expansion and applies reciprocal rank fusion across retrievers.", "page_start": 1, "page_end": 1, "source_type": "section_summary"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": ["paper_a", "paper_b", "paper_c"],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 3,
+        "max_documents_used": 3
+      }
+    },
+    {
+      "case_id": "chat_isolation_a_asks_b_only_content",
+      "kind": "chat_isolation",
+      "question": "Describe the unique evaluation protocol introduced by paper B.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {"chat_label": "B", "doc_label": "paper_b", "content": "Paper B introduces a unique evaluation protocol named QPro that scores answers on temporal consistency.", "page_start": 9, "page_end": 9, "source_type": "claim"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": [],
+        "forbidden_citation_doc_labels": ["paper_b"],
+        "no_answer_phrase_required": true,
+        "min_documents_used": 0,
+        "max_documents_used": 0
+      }
+    },
+    {
+      "case_id": "session_isolation_a1_vs_a2",
+      "kind": "session_isolation",
+      "question": "Did I mention LightRAG to you in a previous session?",
+      "target_chat_label": "A",
+      "target_session_label": "2",
+      "seeded_hits": [
+        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG framework overview seeded from another session.", "page_start": 1, "page_end": 1, "source_type": "chunk"}
+      ],
+      "expected": {
+        "required_citation_doc_labels": [],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 0,
+        "max_documents_used": 1
+      },
+      "runner_note": "Session-history isolation is covered structurally by tests/e2e/test_session_isolation_e2e.py. The runner here verifies the graph still answers a meta-question without leaking citations from sibling sessions — AgentState is built with empty conversation_history, so even though doc A is in scope the meta question may either match the seeded hit or fall back to no-info; both outcomes are acceptable here (max 1 citation)."
+    }
+  ]
+}
