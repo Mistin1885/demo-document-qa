@@ -26,12 +26,44 @@ services:
     volumes:
       - vespa_data:/opt/vespa/var
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:19071/state/v1/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 60s
+      # Real readiness: 8080 only listens once the application package is
+      # deployed and the container cluster is up. The `vespa-deploy` service
+      # below performs that one-shot deploy; this healthcheck is what gates
+      # backend startup.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ApplicationStatus >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
     restart: unless-stopped
+
+  vespa-deploy:
+    # Re-uses the backend image (which already ships `scripts/deploy_vespa.py`
+    # and the `app` package). On every `compose up` it waits for the Vespa
+    # config server, then uploads + activates the application package.
+    # prepareandactivate is idempotent, so re-running on an already-deployed
+    # cluster simply re-activates the same package.
+    build:
+      context: ..
+      dockerfile: deploy/backend/Dockerfile
+    image: paper-notebook-agent/backend:latest
+    depends_on:
+      vespa:
+        # Cannot wait for vespa.service_healthy: the 8080 healthcheck only
+        # passes AFTER this job deploys the package. service_started is
+        # enough — we retry against the config server ourselves.
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - |
+        echo "[vespa-deploy] waiting for vespa config server (vespa:19071)..."
+        until curl -fsS http://vespa:19071/state/v1/health >/dev/null 2>&1; do
+          sleep 3
+        done
+        echo "[vespa-deploy] config server ready, deploying application package..."
+        exec python /app/scripts/deploy_vespa.py --config-url http://vespa:19071
+    restart: "no"
 
   backend:
     build:
@@ -42,7 +74,9 @@ services:
       postgres:
         condition: service_healthy
       vespa:
-        condition: service_started
+        condition: service_healthy
+      vespa-deploy:
+        condition: service_completed_successfully
     environment:
       # DB / Vespa are reachable by service name inside the compose network.
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/paper_notebook

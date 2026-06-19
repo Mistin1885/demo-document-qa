@@ -60,6 +60,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/migrations /app/migrations
 COPY --from=builder /app/alembic.ini /app/alembic.ini
+COPY scripts /app/scripts
 
 # Runtime-only directories (mounted as volumes in docker-compose).
 RUN mkdir -p /app/data/storage /app/data/parsed
