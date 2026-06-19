@@ -77,28 +77,31 @@ services:
         condition: service_healthy
       vespa-deploy:
         condition: service_completed_successfully
+    # Load project-root `.env` so LLM_* / MINERU_SERVER_URL / APP_ENCRYPTION_KEY
+    # defined there flow into the container. Docker Compose only auto-loads
+    # `.env` next to the compose file (i.e. `deploy/.env`), which would miss
+    # the project-root one; `env_file:` makes the loading explicit. The
+    # `environment:` block below still overrides docker-internal addresses
+    # (DATABASE_URL / VESPA_ENDPOINT) because compose merges env_file values
+    # first, then `environment:` on top.
+    env_file:
+      - path: ../.env
+        required: false
     environment:
-      # DB / Vespa are reachable by service name inside the compose network.
+      # DB / Vespa are reachable by service name inside the compose network —
+      # always override any host-port values from `.env`.
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/paper_notebook
       VESPA_ENDPOINT: http://vespa:8080
       VESPA_ENABLED: "true"
-      # Encryption key — rotate in any real deployment.
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-dev-only-change-me-32-bytes-base64}
-      # MinerU vLLM server — runs on the host; from inside Linux containers,
-      # the host is reachable via `host.docker.internal` (added below) or
-      # set MINERU_SERVER_URL on the host before `docker compose up`.
+      APP_ENV: production
+      # MinerU vLLM server runs on the *host*. The user's `.env` likely uses
+      # `http://localhost:8001` (correct for host-side `uv run`) but inside
+      # a container `localhost` resolves to the container itself — so override
+      # with `host.docker.internal` (added below via `extra_hosts`). A shell-
+      # exported MINERU_SERVER_URL still wins via the interpolation default.
       MINERU_SERVER_URL: ${MINERU_SERVER_URL:-http://host.docker.internal:8001}
-      # Env-level fallback LLM (overridden per-chat by provider_profiles).
-      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
-      LLM_API_URL: ${LLM_API_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-2048}
-      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
-      LLM_CONTEXT_WINDOW: ${LLM_CONTEXT_WINDOW:-10000}
       # Allow the frontend container's browser-origin to call the API.
       CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-http://localhost:3010,http://127.0.0.1:3010}
-      APP_ENV: production
     ports:
       - "9010:8000"
     volumes:
