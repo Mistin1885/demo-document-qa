@@ -132,6 +132,25 @@ services:
     restart: unless-stopped
 
 volumes:
+  # All three volumes are declared `external: true` so `docker compose down -v`
+  # does NOT delete them. Chat / session / document persistence depends on
+  # these surviving across stack restarts and accidental `-v`.
+  #
+  # First-time setup (creates the volumes if they don't exist):
+  #   make data-volumes-init
+  # or manually:
+  #   docker volume create deploy_postgres_data
+  #   docker volume create deploy_vespa_data
+  #   docker volume create deploy_backend_data
+  #
+  # To intentionally wipe everything (the only path that nukes data):
+  #   make data-volumes-purge
   postgres_data:
+    external: true
+    name: deploy_postgres_data
   vespa_data:
+    external: true
+    name: deploy_vespa_data
   backend_data:
+    external: true
+    name: deploy_backend_data
