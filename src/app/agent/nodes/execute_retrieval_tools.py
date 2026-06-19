@@ -1,7 +1,8 @@
 """Node: execute_retrieval_tools — run chosen tools from plan.chosen_tools.
 
 For each tool in state.plan.chosen_tools:
-  1. Build default params for the tool.
+  1. Build params via _plan_to_invocations (which expands gap_queries into
+     individual search_hybrid calls and handles summary-path inspect_document).
   2. Use PolicyEngine.check_duplicate_tool_call() (policy 10) to skip
      already-invoked (tool_name, params) pairs.
   3. Call the tool.
@@ -36,31 +37,93 @@ if TYPE_CHECKING:
 
 _engine = PolicyEngine()
 
+_SUMMARY_MARKER = "summary/overview question"
 
-def _build_default_params(tool_name: str, state: AgentState) -> Any:
-    """Return a default params instance for *tool_name*."""
-    if tool_name == "inspect_chat":
-        return InspectChatParams()
-    if tool_name == "inspect_document":
-        # Use first unvisited document from manifests
-        visited = {dm.document_id for dm in state.document_manifests}
-        unvisited = [dm for dm in state.document_manifests if dm.document_id not in visited]
-        doc_id = unvisited[0].document_id if unvisited else uuid.UUID(int=0)
-        return InspectDocumentParams(document_id=doc_id)
-    if tool_name == "fetch_structural_nodes":
-        return FetchStructuralNodesParams(
-            source_types=["document_overview", "chapter_summary", "compact_chapter_summary"],
-        )
-    if tool_name == "search_hybrid":
-        return SearchHybridParams(query=state.question)
-    if tool_name == "query_structured_facts":
-        return QueryStructuredFactsParams()
-    if tool_name == "aggregate_sources":
-        return AggregateSourcesParams(strategy="per_section")
-    if tool_name == "expand_evidence":
-        # No sensible default without an evidence_id; skip
-        return None
-    return None
+
+def _is_summary_path(state: AgentState) -> bool:
+    """Return True when the current plan is on the summary/overview path."""
+    if state.plan is None:
+        return False
+    return _SUMMARY_MARKER in state.plan.rationale or "fetch_structural_nodes" in state.plan.chosen_tools
+
+
+def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
+    """Expand plan.chosen_tools into a flat list of (tool_name, params) pairs.
+
+    Key behaviours:
+    - search_hybrid: consume plan.gap_queries one-per-invocation (distinct
+      query strings → distinct fingerprints → not deduplicated by policy 10).
+      Once gap_queries are exhausted, fall back to state.question.
+    - inspect_document on summary path: produce one invocation per document
+      in state.document_manifests (not just the first one).
+    - All other tools: single default-params invocation.
+    """
+    if state.plan is None:
+        return []
+
+    summary_path = _is_summary_path(state)
+    preset: str = "broad" if summary_path else "default"
+
+    # Work through gap_queries in order; we copy the list so state is not mutated.
+    remaining_gaps = list(state.plan.gap_queries)
+    search_hybrid_seen = False
+
+    invocations: list[tuple[str, Any]] = []
+
+    for tool_name in state.plan.chosen_tools:
+        if tool_name == "inspect_chat":
+            invocations.append((tool_name, InspectChatParams()))
+
+        elif tool_name == "inspect_document":
+            if summary_path and state.document_manifests:
+                for dm in state.document_manifests:
+                    invocations.append((tool_name, InspectDocumentParams(document_id=dm.document_id)))
+            else:
+                doc_id = (
+                    state.document_manifests[0].document_id
+                    if state.document_manifests
+                    else uuid.UUID(int=0)
+                )
+                invocations.append((tool_name, InspectDocumentParams(document_id=doc_id)))
+
+        elif tool_name == "fetch_structural_nodes":
+            invocations.append((
+                tool_name,
+                FetchStructuralNodesParams(
+                    source_types=["document_overview", "chapter_summary", "compact_chapter_summary"],
+                ),
+            ))
+
+        elif tool_name == "search_hybrid":
+            if not search_hybrid_seen:
+                search_hybrid_seen = True
+                # Emit one invocation per gap query first.
+                for gap_q in remaining_gaps:
+                    invocations.append((
+                        tool_name,
+                        SearchHybridParams(query=gap_q, preset=preset),  # type: ignore[call-arg]
+                    ))
+                # Always append a default question-based search as well,
+                # but only when there are no gap queries (first round) — if
+                # gap_queries are present this is a gap-fill round and the
+                # question-based search was already done in round 1 (will be
+                # deduped by fingerprint anyway, but we skip it to keep the
+                # invocation list clean).
+                if not remaining_gaps:
+                    invocations.append((
+                        tool_name,
+                        SearchHybridParams(query=state.question, preset=preset),  # type: ignore[call-arg]
+                    ))
+
+        elif tool_name == "query_structured_facts":
+            invocations.append((tool_name, QueryStructuredFactsParams()))
+
+        elif tool_name == "aggregate_sources":
+            invocations.append((tool_name, AggregateSourcesParams(strategy="per_section")))
+
+        # expand_evidence has no sensible default without an evidence_id; skip.
+
+    return invocations
 
 
 async def execute_retrieval_tools(state: AgentState, deps: ToolDeps) -> dict[str, Any]:
@@ -81,13 +144,9 @@ async def execute_retrieval_tools(state: AgentState, deps: ToolDeps) -> dict[str
 
     existing_evidence_ids = {ev.evidence_id for ev in new_evidence}
 
-    for tool_name in state.plan.chosen_tools:
+    for tool_name, params in _plan_to_invocations(state):
         spec = TOOL_REGISTRY.get(tool_name)
         if spec is None:
-            continue
-
-        params = _build_default_params(tool_name, state)
-        if params is None:
             continue
 
         params_dict = params.model_dump()

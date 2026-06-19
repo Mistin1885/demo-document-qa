@@ -7,7 +7,9 @@
 > **執行原則：Phase 1（MinerU PoC）為硬性 gate，未通過不得進入 Phase 2 之後。**
 > **測試密度上限：每個 test 檔 ≤10 個測試項（詳見 `CLAUDE.md §12.1`）。**
 
-最後更新：2026-06-18 ｜ 當前 Phase：_Phase 9 完成（Golden QA harness + Isolation E2E + Goal Coverage scorer + Final report / README）_ ｜ 累計 Goal Score：**100 / 100**（所有 7 mandatory gate PASS；artifact: `artifacts/evaluation/goal-score.{json,md}`）
+最後更新：2026-06-19 ｜ 當前 Phase：_IMPROVEMENT Phase A 完成（gap-retrieval bug fix + broad preset；Phase B/C/D/E 待續）_ ｜ 累計 Goal Score：**100 / 100**（Phase A 無新增 mandatory gate；既有 7 mandatory gate PASS 維持）
+
+> **2026-06-19 IMPROVEMENT Phase A 完成**：對應 `IMPROVEMENT_PLAN.md §2`。修掉 `plan_gap_retrieval` 把 gap query 塞進 `rationale` 的空轉 bug —— 改為 `AgentPlan.gap_queries: list[str]` 結構化欄位；`execute_retrieval_tools` 重構為 `_plan_to_invocations(state)` helper，對每個 gap query 各發一次 `search_hybrid`（不同 query → 不同 fingerprint → 不被 policy 10 去重）。summary path 下 `inspect_document` 對 `document_manifests` 全部文件各跑一次；`SearchHybridParams.preset: Literal["default","broad"]`，broad 將 `final_top_k` 放大為 `min(top_k*2, 60)`。新增 `tests/unit/agent/{test_plan_gap_retrieval,test_execute_retrieval_tools,test_search_hybrid_preset}.py`（4 / 5 / 3 items，皆 ≤10）；既有 2 個 e2e/policies 檔斷言同步更新仍維持 ≤10。`uv run pytest -q` → **403 passed in 2.26s**（387 → +16），mypy 31 files / 0 issues，ruff 全綠。chat_id 隔離契約未動；CLAUDE.md §8 未變。
 
 > **2026-06-18 Phase 9 完成**：(9.1) `data/fixtures/qa_cases.json` 七類 case + `src/app/evaluation/qa_eval.py`（`CitingMockChatProvider` 注入 `[c<idx>]`、`_ScopedMockRetrieval` 鏡像 chat_id filter、`run_case`/`evaluate_corpus`）+ `tests/evaluation/test_qa_eval.py`（9 items）。(9.2) `tests/e2e/{conftest,test_chat_isolation_e2e,test_session_isolation_e2e}.py`（6+5 items）— 透過 FastAPI + 真實 Postgres + patched `_build_providers` 完整 E2E，包含 SSE / cross-chat 拒答 / cross-session GET 404。(9.3) `src/app/evaluation/goal_score.py` + `tests/evaluation/test_goal_score.py`（10 items）+ `scripts/run_{qa,goal_score}_eval.py`。(9.4) README.md 完整重寫 + `artifacts/final-report.md`（GUIDE §29 全 20 項）。`uv run pytest -q` → **387 passed in 2.05s**，每檔 ≤10；ruff/mypy 全綠；goal-score JSON 顯示 100/100、`mandatory_all_passed=true`、`passed_overall=true`。
 

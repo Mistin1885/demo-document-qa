@@ -102,6 +102,7 @@ class AgentPlan(BaseModel):
     information_needs: list[str] = Field(default_factory=list)
     chosen_tools: list[str] = Field(default_factory=list)
     rationale: str = ""
+    gap_queries: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

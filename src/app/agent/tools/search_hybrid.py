@@ -45,12 +45,17 @@ async def search_hybrid(
     evidence: list[EvidenceItem] = []
 
     try:
+        if params.preset == "broad":
+            final_top_k = min(params.top_k * 2, 60)
+        else:
+            final_top_k = params.top_k
+
         req = RetrievalRequest(
             chat_id=state.chat_id,  # injected from state — LLM cannot change this
             query=params.query,
             document_ids=params.document_ids,
             source_types=params.source_types,
-            final_top_k=params.top_k,
+            final_top_k=final_top_k,
             rerank_mode=params.rerank_mode,
         )
 

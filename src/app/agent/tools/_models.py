@@ -89,6 +89,7 @@ class SearchHybridParams(BaseModel):
     top_k: int = Field(default=8, ge=1, le=60)
     rerank_mode: Literal["none", "native", "cross_encoder"] = "native"
     max_tokens: int = Field(default=5_000, ge=1)
+    preset: Literal["default", "broad"] = "default"
 
 
 # ---------------------------------------------------------------------------
