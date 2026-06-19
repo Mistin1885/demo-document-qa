@@ -25,7 +25,13 @@ from app.services import chat_service
 router = APIRouter()
 
 
-@router.post("/", response_model=ChatRead, status_code=http_status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=ChatRead,
+    status_code=http_status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
+@router.post("", response_model=ChatRead, status_code=http_status.HTTP_201_CREATED)
 async def create_chat(
     data: ChatCreate,
     session: AsyncSession = Depends(get_session),
@@ -34,7 +40,8 @@ async def create_chat(
     return await chat_service.create_chat(session, data)
 
 
-@router.get("/", response_model=list[ChatRead])
+@router.get("/", response_model=list[ChatRead], include_in_schema=False)
+@router.get("", response_model=list[ChatRead])
 async def list_chats(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

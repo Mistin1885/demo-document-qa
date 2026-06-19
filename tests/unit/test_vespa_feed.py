@@ -87,11 +87,11 @@ def test_make_vespa_id_deterministic_and_unique() -> None:
 async def test_feed_chunks_put_url_body_and_embedding(
     httpx_mock: pytest_httpx.HTTPXMock,
 ) -> None:
-    """Single chunk: correct PUT URL, body fields, embedding tensor format."""
+    """Single chunk: correct POST URL, body fields, embedding tensor format."""
     chunk = make_chunk()
     chunk.embedding = [0.1, 0.2, 0.3, 0.4]
     url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk.vespa_document_id}"
-    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": chunk.vespa_document_id})
+    httpx_mock.add_response(url=url, method="POST", status_code=200, json={"id": chunk.vespa_document_id})
 
     client = make_client(dim=4)
     report = await client.feed_chunks([chunk])
@@ -116,8 +116,8 @@ async def test_feed_chunks_idempotency_and_partial_failure(
     chunk1 = make_chunk(doc_id=doc_id).model_copy(update={"vespa_document_id": vid})
     chunk2 = make_chunk(doc_id=doc_id).model_copy(update={"vespa_document_id": vid})
     url = f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{vid}"
-    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
-    httpx_mock.add_response(url=url, method="PUT", status_code=200, json={"id": vid})
+    httpx_mock.add_response(url=url, method="POST", status_code=200, json={"id": vid})
+    httpx_mock.add_response(url=url, method="POST", status_code=200, json={"id": vid})
     report = await make_client().feed_chunks([chunk1, chunk2])
     reqs = httpx_mock.get_requests()
     assert len(reqs) == 2 and all(str(r.url) == url for r in reqs)
@@ -127,11 +127,11 @@ async def test_feed_chunks_idempotency_and_partial_failure(
     chunk_a, chunk_b = make_chunk(order_index=0), make_chunk(order_index=1)
     httpx_mock.add_response(
         url=f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk_a.vespa_document_id}",
-        method="PUT", status_code=200, json={"id": chunk_a.vespa_document_id},
+        method="POST", status_code=200, json={"id": chunk_a.vespa_document_id},
     )
     httpx_mock.add_response(
         url=f"{ENDPOINT}/document/v1/{NAMESPACE}/{SCHEMA}/docid/{chunk_b.vespa_document_id}",
-        method="PUT", status_code=500, text="internal error",
+        method="POST", status_code=500, text="internal error",
     )
     r2 = await make_client().feed_chunks([chunk_a, chunk_b])
     assert r2.success_count == 1 and r2.fail_count == 1 and len(r2.errors) == 1

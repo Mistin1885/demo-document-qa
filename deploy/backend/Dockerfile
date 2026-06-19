@@ -24,6 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
 # Now copy the rest of the project and install the package itself.
+COPY README.md ./README.md
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
@@ -38,9 +39,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:${PATH}" \
     PYTHONPATH="/app/src"
 
-# curl: healthcheck. libpq5: psycopg runtime. No build toolchain in runtime.
+# curl: healthcheck. libpq5: psycopg runtime.
+# libgl/libglib/libx*: OpenCV runtime libs required by MinerU's cv2 import.
+# No build toolchain in runtime.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl libpq5 \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        libglib2.0-0 \
+        libgl1 \
+        libpq5 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        libxcb1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

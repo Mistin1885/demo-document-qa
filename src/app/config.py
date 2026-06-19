@@ -42,6 +42,12 @@ class Settings(BaseSettings):
 
     # --- MinerU hybrid client ---
     mineru_server_url: str = "http://localhost:8001"
+    auto_ingest_uploads: bool = True
+    """When True, uploaded PDFs are queued for MinerU parsing immediately.
+
+    The upload API still skips auto-ingestion in ``APP_ENV=test`` so existing
+    tests never try to start a real MinerU subprocess.
+    """
 
     # --- Database (required — raises ValidationError if absent) ---
     database_url: str
@@ -81,8 +87,11 @@ class Settings(BaseSettings):
     answer_reserve). Drives ``ContextBudgetManager`` when no per-request
     override is supplied."""
 
-    # --- Vespa embedding dimension (Phase 6 schema DIM) ---
-    embedding_dim: int = 1024
+    # --- Vespa embedding dimension (native E5 schema DIM) ---
+    # Matches deploy/vespa/application/services.xml's built-in e5-small-v2
+    # Hugging Face embedder. Users should not need to configure an embedding
+    # profile just to upload/query documents.
+    embedding_dim: int = 384
 
     # --- Local file storage root (Phase 3.3) ---
     app_data_root: str = "data"

@@ -48,7 +48,7 @@ def test_default_values(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert s.mineru_server_url == "http://localhost:8001"
     assert s.vespa_endpoint == "http://localhost:8080"
-    assert s.embedding_dim == 1024
+    assert s.embedding_dim == 384
     assert s.app_env == "development"
     assert s.database_url == REQUIRED_ENV["DATABASE_URL"]
     assert s.openai_api_key is None

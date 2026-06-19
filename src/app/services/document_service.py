@@ -42,7 +42,7 @@ from app.errors import (
     InvalidUpload,
 )
 from app.models.domain import ChatDocumentRead, DocumentRead
-from app.models.orm import Chat, ChatDocument, Document
+from app.models.orm import Chat, ChatDocument, Document, IngestionJob
 
 if TYPE_CHECKING:
     from app.services.vespa_indexer import VespaIndexer
@@ -394,6 +394,35 @@ async def trigger_ingestion(
     # TODO(Phase 4): create IngestionJob, dispatch background task.
 
 
+async def enqueue_ingestion(
+    session: AsyncSession,
+    chat_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> uuid.UUID:
+    """Mark a document as queued for MinerU ingestion and create an ingestion job.
+
+    This function does **not** run MinerU itself. The API layer schedules a
+    background worker after calling this function.
+    """
+    doc = await _get_document_in_chat(session, chat_id, document_id)
+    now = _now()
+
+    doc.status = "parsing"
+    doc.updated_at = now
+
+    job = IngestionJob(
+        chat_id=chat_id,
+        document_id=document_id,
+        state="pending",
+        attempt=0,
+        created_at=now,
+    )
+    session.add(job)
+    await session.flush()
+
+    return job.id
+
+
 __all__ = [
     "upload_document",
     "list_documents",
@@ -401,4 +430,5 @@ __all__ = [
     "delete_document",
     "associate_document",
     "trigger_ingestion",
+    "enqueue_ingestion",
 ]

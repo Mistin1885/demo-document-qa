@@ -1,7 +1,7 @@
 """Vespa feed/delete service for the Paper Notebook Agent (Phase 6.2).
 
 All document chunks are fed via the Vespa Document REST API:
-  PUT /document/v1/{namespace}/{schema}/docid/{vespa_document_id}
+  POST /document/v1/{namespace}/{schema}/docid/{vespa_document_id}
 
 Delete-by-document uses the selection visit/delete endpoint:
   DELETE /document/v1/{namespace}/{schema}/docid?selection=...&cluster=documents
@@ -11,8 +11,11 @@ Design contract (CLAUDE.md §6.2)
 - ``chat_id`` is NEVER accepted from external callers; it is always injected by
   the service layer.
 - Pure async (httpx.AsyncClient); no thread/process pool.
-- Embedding tensor encoded as Vespa indexed tensor: ``{"values": [...]}``.
-- Feed is idempotent: PUT is an upsert keyed on ``vespa_document_id``.
+- Embedding tensor encoded as Vespa indexed tensor: ``{"values": [...]}``
+  when supplied. Production ingestion omits it so Vespa's native embedder
+  computes the tensor during document processing.
+- Feed is idempotent: POST to the docid endpoint replaces/upserts by
+  ``vespa_document_id``.
 - ``VespaFeedClient`` satisfies the ``VespaIndexer`` Protocol via structural
   subtyping (no inheritance needed).
 - Dimension mismatch raises ``VespaDimensionMismatch`` — no silent truncation.
@@ -109,7 +112,11 @@ class VespaChunk(BaseModel):
     token_count: int = Field(ge=0, default=0)
 
     embedding: list[float] = Field(default_factory=list)
-    """Embedding vector.  Length must equal ``VespaFeedClient.embedding_dim``."""
+    """Optional precomputed embedding vector.
+
+    When empty, the feed payload omits ``embedding`` so Vespa's configured
+    embedder can compute it during document processing.
+    """
 
     created_at: int = Field(default=0)
     """Unix epoch milliseconds (long in Vespa schema)."""
@@ -168,7 +175,7 @@ class VespaFeedClient:
         endpoint: str = "http://localhost:8080",
         application_name: str = "default",
         schema_name: str = "document_chunk",
-        embedding_dim: int = 1024,
+        embedding_dim: int = 384,
         cluster: str = "documents",
         feed_timeout: float = 5.0,
         delete_timeout: float = 60.0,
@@ -191,36 +198,39 @@ class VespaFeedClient:
     def _chunk_to_fields(self, chunk: VespaChunk) -> dict[str, object]:
         """Convert a ``VespaChunk`` to the Vespa ``{"fields": {...}}`` payload.
 
-        The embedding tensor is encoded in Vespa indexed tensor format:
+        When a precomputed embedding exists, its tensor value is encoded as
         ``{"values": [...]}``.
+        Production ingestion omits ``embedding`` and lets Vespa's indexing
+        expression compute it from ``content`` with the native embedder.
         """
-        return {
-            "fields": {
-                "vespa_document_id": chunk.vespa_document_id,
-                "chat_id": chunk.chat_id,
-                "document_id": chunk.document_id,
-                "source_node_id": chunk.source_node_id,
-                "parent_node_id": chunk.parent_node_id,
-                "source_type": chunk.source_type,
-                "title": chunk.title,
-                "heading_path": chunk.heading_path,
-                "content": chunk.content,
-                "keywords": chunk.keywords,
-                "technical_keywords": chunk.technical_keywords,
-                "entities": chunk.entities,
-                "page_start": chunk.page_start,
-                "page_end": chunk.page_end,
-                "order_index": chunk.order_index,
-                "token_count": chunk.token_count,
-                "embedding": {"values": chunk.embedding},
-                "created_at": chunk.created_at,
-            }
+        raw_fields: dict[str, object] = {
+            "vespa_document_id": chunk.vespa_document_id,
+            "chat_id": chunk.chat_id,
+            "document_id": chunk.document_id,
+            "source_node_id": chunk.source_node_id,
+            "source_type": chunk.source_type,
+            "title": chunk.title,
+            "heading_path": chunk.heading_path,
+            "content": chunk.content,
+            "keywords": chunk.keywords,
+            "technical_keywords": chunk.technical_keywords,
+            "entities": chunk.entities,
+            "page_start": chunk.page_start,
+            "page_end": chunk.page_end,
+            "order_index": chunk.order_index,
+            "token_count": chunk.token_count,
+            "created_at": chunk.created_at,
         }
+        if chunk.parent_node_id is not None:
+            raw_fields["parent_node_id"] = chunk.parent_node_id
+        if chunk.embedding:
+            raw_fields["embedding"] = {"values": chunk.embedding}
+        return {"fields": raw_fields}
 
     def _validate_embedding_dim(self, chunk: VespaChunk) -> None:
         """Raise ``VespaDimensionMismatch`` if ``chunk.embedding`` length is wrong."""
         got = len(chunk.embedding)
-        if got != self._embedding_dim:
+        if got != 0 and got != self._embedding_dim:
             raise VespaDimensionMismatch(expected=self._embedding_dim, got=got)
 
     # ------------------------------------------------------------------
@@ -228,9 +238,9 @@ class VespaFeedClient:
     # ------------------------------------------------------------------
 
     async def feed_chunks(self, chunks: list[VespaChunk]) -> FeedReport:
-        """PUT each chunk to Vespa.  Validates embedding dims before sending.
+        """POST each chunk to Vespa.  Validates embedding dims before sending.
 
-        Each PUT is a Vespa upsert keyed on ``vespa_document_id``, so feeding
+        Each POST is a Vespa put keyed on ``vespa_document_id``, so feeding
         the same chunk twice produces exactly one Vespa document.
 
         Parameters
@@ -258,17 +268,17 @@ class VespaFeedClient:
                 url = f"{self._doc_base_url()}/{chunk.vespa_document_id}"
                 body = self._chunk_to_fields(chunk)
                 try:
-                    resp = await client.put(url, json=body)
+                    resp = await client.post(url, json=body)
                     if resp.status_code in (200, 201):
                         report.success_count += 1
                     else:
                         report.fail_count += 1
                         report.errors.append(
-                            f"PUT {chunk.vespa_document_id} → {resp.status_code}: {resp.text[:200]}"
+                            f"POST {chunk.vespa_document_id} → {resp.status_code}: {resp.text[:200]}"
                         )
                 except httpx.HTTPError as exc:
                     report.fail_count += 1
-                    report.errors.append(f"PUT {chunk.vespa_document_id} → error: {exc}")
+                    report.errors.append(f"POST {chunk.vespa_document_id} → error: {exc}")
 
         return report
 

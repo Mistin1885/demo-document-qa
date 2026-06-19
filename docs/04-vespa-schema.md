@@ -86,7 +86,8 @@ field embedding type tensor<float>(x[<DIM>]) {
 
 - Distance metric is **angular** (cosine on unit-normalised vectors).
 - `<DIM>` is substituted at app-package build time from
-  `Settings.embedding_dim` (default 1024).
+  `Settings.embedding_dim` (default 384, matching the bundled E5-small Vespa
+  embedder).
 
 ---
 
@@ -179,7 +180,7 @@ silently accept wrong-width vectors.
 
 | Method | What it does |
 |---|---|
-| `VespaFeedClient.feed_chunks(chunks)` | PUT `/document/v1/{namespace}/document_chunk/docid/{vespa_document_id}` — one HTTP call per chunk, encoded as `{"fields": {…, "embedding": {"values": [...]}}}` |
+| `VespaFeedClient.feed_chunks(chunks)` | POST `/document/v1/{namespace}/document_chunk/docid/{vespa_document_id}` — one HTTP call per chunk. Production feed omits `embedding`; Vespa computes it from `content` via `input content \| embed e5 \| attribute \| index`. Tests may still inject precomputed `{"embedding": {"values": [...]}}`. |
 | `VespaFeedClient.delete_by_document(chat_id, document_id)` | selection-based delete: `document_chunk.chat_id == "<cid>" and document_chunk.document_id == "<did>"` |
 
 `delete_by_document` is what makes ingestion idempotent — see
@@ -219,7 +220,8 @@ The script:
 The schema is generated, but Vespa still treats DIM as a breaking change.
 The recipe:
 
-1. Update `EMBEDDING_DIM` / `Settings.embedding_dim`.
+1. Update `EMBEDDING_DIM` / `Settings.embedding_dim` only if you also change
+   the Vespa embedder model and schema dimension.
 2. Re-run `scripts/deploy_vespa.py` — `validation-overrides.xml` permits
    `embed-dimension-change` for the next ~30 days during dev.
 3. Re-ingest every document so existing chunks pick up the new width

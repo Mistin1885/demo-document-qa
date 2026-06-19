@@ -15,9 +15,13 @@ import type { ApiErrorBody } from "./types";
 // Configuration
 // ---------------------------------------------------------------------------
 
+// NEXT_PUBLIC_API_BASE_URL is baked in at build time. Leave it unset in
+// Docker so the browser uses the relative /api/proxy prefix, which the
+// Next.js Route Handler forwards to the backend container server-side
+// (so the internal Docker hostname never reaches the browser).
 export const API_BASE_URL =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) ||
-  "http://localhost:8000";
+  "/api/proxy";
 
 // ---------------------------------------------------------------------------
 // ApiError — thrown by every fetch helper on non-2xx responses

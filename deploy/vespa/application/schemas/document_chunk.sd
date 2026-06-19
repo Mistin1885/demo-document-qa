@@ -66,26 +66,29 @@ schema document_chunk {
         field token_count type int {
             indexing: attribute | summary
         }
-        field embedding type tensor<float>(x[1024]) {
-            indexing: attribute | index
-            attribute {
-                distance-metric: angular
-            }
-            index {
-                hnsw {
-                    max-links-per-node: 16
-                    neighbors-to-explore-at-insert: 200
-                }
-            }
-        }
         field created_at type long {
             indexing: attribute | summary
+        }
+    }
+    field embedding type tensor<float>(x[384]) {
+        indexing: input content | embed e5 | attribute | index
+        attribute {
+            distance-metric: angular
+        }
+        index {
+            hnsw {
+                max-links-per-node: 16
+                neighbors-to-explore-at-insert: 200
+            }
         }
     }
     fieldset default {
         fields: content, title, heading_path, keywords, technical_keywords, entities
     }
     rank-profile bm25_only {
+        inputs {
+            query(qvec) tensor<float>(x[384])
+        }
         function bm25_weighted() {
             expression {
                 2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
@@ -119,6 +122,9 @@ schema document_chunk {
         }
     }
     rank-profile semantic_only {
+        inputs {
+            query(qvec) tensor<float>(x[384])
+        }
         function bm25_weighted() {
             expression {
                 2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
@@ -152,6 +158,9 @@ schema document_chunk {
         }
     }
     rank-profile hybrid_first_phase {
+        inputs {
+            query(qvec) tensor<float>(x[384])
+        }
         function bm25_weighted() {
             expression {
                 2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
@@ -201,6 +210,9 @@ schema document_chunk {
         }
     }
     rank-profile hybrid_with_native_rerank inherits hybrid_first_phase {
+        inputs {
+            query(qvec) tensor<float>(x[384])
+        }
         function bm25_weighted() {
             expression {
                 2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
@@ -245,6 +257,9 @@ schema document_chunk {
         }
     }
     rank-profile hybrid_for_cross_encoder {
+        inputs {
+            query(qvec) tensor<float>(x[384])
+        }
         function bm25_weighted() {
             expression {
                 2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)

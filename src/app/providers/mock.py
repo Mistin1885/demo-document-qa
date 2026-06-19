@@ -196,7 +196,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
         Dimensionality of the embedding vectors.
     """
 
-    def __init__(self, dimension: int = 1024) -> None:
+    def __init__(self, dimension: int = 384) -> None:
         self._dimension = dimension
 
     @property

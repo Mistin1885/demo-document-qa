@@ -35,6 +35,7 @@ import sys
 import time
 import zipfile
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -106,6 +107,11 @@ def _deploy_zip(config_url: str, zip_bytes: bytes) -> str:
 
 def _wait_for_active(config_url: str, session_url: str) -> None:
     """Poll *session_url* until Vespa reports ``active`` deployment."""
+    # Vespa may return a session URL using the container's internal host/port
+    # (for compose: localhost:19071). Normalize it to the user-supplied
+    # config_url so polling works from the host (e.g. localhost:19072).
+    session_url = _normalize_session_url(config_url, session_url)
+
     # Also check the tenant application status directly as fallback
     app_status_url = (
         f"{config_url.rstrip('/')}/application/v2/tenant/default"
@@ -136,6 +142,25 @@ def _wait_for_active(config_url: str, session_url: str) -> None:
             time.sleep(_POLL_INTERVAL_S)
     raise TimeoutError(
         f"Vespa deployment did not reach 'active' after {_MAX_POLL_ATTEMPTS} polls."
+    )
+
+
+def _normalize_session_url(config_url: str, session_url: str) -> str:
+    """Return *session_url* with scheme/netloc from *config_url*.
+
+    Config servers commonly return URLs that are only valid from inside the
+    Vespa container. Keeping the returned path but replacing scheme/netloc lets
+    the deploy script work with host port mappings.
+    """
+    config_parts = urlparse(config_url.rstrip("/"))
+    session_parts = urlparse(session_url)
+    if not session_parts.scheme or not session_parts.netloc:
+        return f"{config_url.rstrip('/')}/{session_url.lstrip('/')}"
+    return urlunparse(
+        session_parts._replace(
+            scheme=config_parts.scheme,
+            netloc=config_parts.netloc,
+        )
     )
 
 
@@ -191,7 +216,7 @@ def main() -> int:
             embedding_dim = get_settings().embedding_dim
         except Exception:
             # Fallback default; Settings might raise if required vars absent
-            embedding_dim = int(os.environ.get("EMBEDDING_DIM", "1024"))
+            embedding_dim = int(os.environ.get("EMBEDDING_DIM", "384"))
 
     config_url: str
     if args.config_url:

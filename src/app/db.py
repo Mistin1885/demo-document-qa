@@ -63,6 +63,15 @@ def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     )
 
 
+def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    """Return the application async session factory.
+
+    This is intended for background tasks that cannot use FastAPI dependency
+    injection but still need short-lived database sessions.
+    """
+    return _get_sessionmaker()
+
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields a transactional ``AsyncSession``.
 
@@ -79,4 +88,4 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-__all__ = ["get_session"]
+__all__ = ["get_session", "get_sessionmaker"]

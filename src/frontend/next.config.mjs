@@ -1,9 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Emit a self-contained server bundle so the production Docker image
-  // can run with just `node server.js` and no node_modules copy.
   output: "standalone",
+  // Let the API proxy preserve the exact path it receives. A framework-level
+  // trailing-slash redirect can break streamed POST bodies before they reach
+  // the backend proxy handler.
+  skipTrailingSlashRedirect: true,
 };
 
 export default nextConfig;

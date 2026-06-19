@@ -160,6 +160,7 @@ def _build_schema(embedding_dim: int) -> Schema:
         "closeness(field, embedding)",
     ]
     common_summary_features = common_match_features  # expose same set
+    common_inputs = [("query(qvec)", tensor_type)]
 
     # ------------------------------------------------------------------
     # Shared Function definitions reused across profiles
@@ -186,6 +187,7 @@ def _build_schema(embedding_dim: int) -> Schema:
         name="bm25_only",
         first_phase=_build_bm25_first_phase(),
         functions=[fn_bm25_weighted, fn_semantic],
+        inputs=common_inputs,
         match_features=common_match_features,
         summary_features=common_summary_features,
     )
@@ -195,6 +197,7 @@ def _build_schema(embedding_dim: int) -> Schema:
         name="semantic_only",
         first_phase="closeness(field, embedding)",
         functions=[fn_bm25_weighted, fn_semantic],
+        inputs=common_inputs,
         match_features=common_match_features,
         summary_features=common_summary_features,
     )
@@ -209,6 +212,7 @@ def _build_schema(embedding_dim: int) -> Schema:
             fn_source_type_boost,
             fn_heading_match_boost,
         ],
+        inputs=common_inputs,
         second_phase=SecondPhaseRanking(
             expression=(
                 "firstPhase"
@@ -239,6 +243,7 @@ def _build_schema(embedding_dim: int) -> Schema:
             fn_source_type_boost,
             fn_heading_match_boost,
         ],
+        inputs=common_inputs,
         match_features=common_match_features,
         summary_features=common_summary_features,
     )
@@ -249,6 +254,7 @@ def _build_schema(embedding_dim: int) -> Schema:
         first_phase=f"{_build_bm25_first_phase()} + 100.0 * closeness(field, embedding)",
         # No second_phase: all reranking is handled in Python
         functions=[fn_bm25_weighted, fn_semantic],
+        inputs=common_inputs,
         match_features=common_match_features,
         summary_features=common_summary_features,
     )
@@ -358,9 +364,9 @@ def _build_schema(embedding_dim: int) -> Schema:
                 Field(
                     name="embedding",
                     type=tensor_type,
-                    indexing=["attribute", "index"],
+                    indexing=["input content | embed e5", "attribute", "index"],
                     ann=HNSW(distance_metric="angular"),
-                    is_document_field=True,
+                    is_document_field=False,
                 ),
                 # ---------- timestamp ----------
                 Field(
@@ -400,22 +406,27 @@ def _services_xml() -> str:
     deployment (CLAUDE.md §5.2).  The container name is ``default``; the
     content cluster name is ``documents`` per the spec.
 
-    Query timeout is set to 5 s on the container component.
     """
     return """\
 <?xml version="1.0" encoding="UTF-8"?>
 <services version="1.0">
   <container id="default" version="1.0">
-    <search>
-      <query-timeout>5.0</query-timeout>
-    </search>
+    <search/>
     <document-api/>
+    <component id="e5" type="hugging-face-embedder">
+      <transformer-model url="https://huggingface.co/intfloat/e5-small-v2/resolve/main/model.onnx"/>
+      <tokenizer-model url="https://huggingface.co/intfloat/e5-small-v2/raw/main/tokenizer.json"/>
+      <prepend>
+        <query>query: </query>
+        <document>passage: </document>
+      </prepend>
+    </component>
     <document-processing/>
   </container>
   <content id="documents" version="1.0">
     <redundancy>1</redundancy>
     <documents>
-      <document name="document_chunk" type="document_chunk" mode="index"/>
+      <document type="document_chunk" mode="index"/>
     </documents>
     <group>
       <node distribution-key="0" hostalias="node1"/>
@@ -444,7 +455,9 @@ def _validation_overrides_xml(until: str) -> str:
     ----------
     until:
         ISO-8601 date (``YYYY-MM-DD``) until which the overrides are valid.
-        Recommended: today + 30 days.
+        Recommended: today + 29 days. Vespa rejects overrides more than 30
+        days in the future, and time-zone differences can make exactly 30
+        days too far.
     """
     return f"""\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -473,7 +486,7 @@ def write_application_files(
     2. Overwrites ``services.xml``, ``hosts.xml``, and
        ``validation-overrides.xml`` with our custom single-node versions that
        match the spec (container name ``default``, content cluster
-       ``documents``, 5 s query timeout).
+       ``documents``).
 
     Parameters
     ----------
@@ -482,8 +495,8 @@ def write_application_files(
     embedding_dim:
         Tensor dimension; passed directly to ``build_application_package``.
     validation_until:
-        ISO date string for validation-overrides.xml.  Defaults to today
-        + 30 days if ``None``.
+        ISO date string for validation-overrides.xml. Defaults to today
+        + 29 days if ``None``.
     """
     import datetime
 
@@ -496,7 +509,7 @@ def write_application_files(
 
     # Step 2: overwrite XML files with our customised versions
     if validation_until is None:
-        validation_until = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+        validation_until = (datetime.date.today() + datetime.timedelta(days=29)).isoformat()
 
     (application_dir / "services.xml").write_text(_services_xml(), encoding="utf-8")
     (application_dir / "hosts.xml").write_text(_hosts_xml(), encoding="utf-8")

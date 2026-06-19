@@ -8,8 +8,8 @@ CLAUDE.md §7 contract
 - Supports three rerank modes: ``none``, ``native`` (Vespa second-phase), ``cross_encoder``.
 - YQL construction is centralised in ``_yql_where()`` which enforces the chat_id invariant.
 - No SQL; no retry; no sleep; no cache; httpx timeout 8 s.
-- Embedding dimension validated against provider.dimension; mismatch raises
-  ``VespaDimensionMismatch``.
+- Embedding dimension validated against provider.dimension when an external
+  provider is injected; production uses Vespa's native embedder instead.
 
 Chat-id injection guarantee
 ---------------------------
@@ -176,7 +176,8 @@ class RetrievalService:
         Vespa content cluster name (default ``"documents"``).
     embedding_dim:
         Expected embedding dimension; validated against
-        ``embedding_provider.dimension``.  Defaults to 1024 (config default).
+        ``embedding_provider.dimension``. Defaults to 384, matching the bundled
+        Vespa E5 native embedder schema.
     """
 
     _SEARCH_TIMEOUT: float = 8.0
@@ -184,12 +185,12 @@ class RetrievalService:
     def __init__(
         self,
         endpoint: str,
-        embedding_provider: EmbeddingProvider,
+        embedding_provider: EmbeddingProvider | None = None,
         reranker_provider: RerankerProvider | None = None,
         application: str = "default",
         schema: str = "document_chunk",
         cluster: str = "documents",
-        embedding_dim: int = 1024,
+        embedding_dim: int = 384,
         http_transport: AsyncBaseTransport | None = None,
     ) -> None:
         self._endpoint = endpoint.rstrip("/")
@@ -236,7 +237,10 @@ class RetrievalService:
         t_start = time.monotonic()
 
         # --- Validate embedding dim ---
-        if self._embedding_provider.dimension != self._embedding_dim:
+        if (
+            self._embedding_provider is not None
+            and self._embedding_provider.dimension != self._embedding_dim
+        ):
             raise VespaDimensionMismatch(
                 expected=self._embedding_dim,
                 got=self._embedding_provider.dimension,
@@ -252,14 +256,21 @@ class RetrievalService:
 
         debug_queries: list[str] = []
 
-        # --- Step 1: Embed query ---
+        # --- Step 1: Prepare query embedding ---
         t_embed_start = time.monotonic()
-        embeddings = await self._embedding_provider.embed([req.query])
-        qvec: list[float] = embeddings[0]
+        qvec: list[float] | None = None
+        if self._embedding_provider is not None:
+            embeddings = await self._embedding_provider.embed([req.query])
+            qvec = embeddings[0]
         embed_ms = (time.monotonic() - t_embed_start) * 1000.0
 
-        # Tensor body for Vespa
-        tensor_values: dict[str, object] = {"values": qvec}
+        # Tensor body for Vespa. If no Python embedding provider is configured,
+        # ask Vespa's configured embedder to produce query(qvec) internally.
+        tensor_values: dict[str, object] | str
+        if qvec is None:
+            tensor_values = "embed(e5, @user_query)"
+        else:
+            tensor_values = {"values": qvec}
 
         # --- Step 2: BM25 and/or ANN queries based on retrieval_mode ---
         bm25_yql = (
@@ -277,15 +288,17 @@ class RetrievalService:
         bm25_body: dict[str, object] = {
             "yql": bm25_yql,
             "query": req.query,
+            "user_query": req.query,
             "hits": req.bm25_top_k,
             "ranking.profile": "bm25_only",
-            "ranking.features.query(qvec)": tensor_values,
+            "input.query(qvec)": tensor_values,
         }
         ann_body: dict[str, object] = {
             "yql": ann_yql,
+            "user_query": req.query,
             "hits": req.ann_top_k,
             "ranking.profile": "semantic_only",
-            "ranking.features.query(qvec)": tensor_values,
+            "input.query(qvec)": tensor_values,
         }
 
         t_bm25_start = time.monotonic()
@@ -523,7 +536,7 @@ class RetrievalService:
         self,
         fused: list[FusedHit],
         req: RetrievalRequest,
-        tensor_values: dict[str, object],
+        tensor_values: dict[str, object] | str,
         debug_queries: list[str],
     ) -> tuple[list[SearchHit], list[str], float]:
         """Fire a third Vespa query using ``hybrid_with_native_rerank`` on fused doc IDs.
@@ -552,9 +565,10 @@ class RetrievalService:
 
         rerank_body: dict[str, object] = {
             "yql": rerank_yql,
+            "user_query": req.query,
             "hits": req.rerank_top_k,
             "ranking.profile": "hybrid_with_native_rerank",
-            "ranking.features.query(qvec)": tensor_values,
+            "input.query(qvec)": tensor_values,
         }
 
         t_start = time.monotonic()

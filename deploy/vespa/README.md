@@ -10,7 +10,7 @@ The application package lives in `deploy/vespa/application/` and is deployed sep
 uv run python scripts/deploy_vespa.py
 ```
 
-This script connects to the Vespa config server at `http://localhost:19071`, uploads the application package (including `schemas/document_chunk.sd`), and waits for deployment to complete. Run it after `docker compose up -d vespa` reports a healthy container.
+This script connects to the Vespa config server at `http://localhost:19072` for the compose stack, uploads the application package (including `schemas/document_chunk.sd`), and waits for deployment to complete. Run it after `docker compose up -d vespa` reports a healthy container.
 
 ## Quick-start
 
@@ -22,15 +22,15 @@ docker compose -f deploy/docker-compose.yml up -d postgres vespa
 docker compose -f deploy/docker-compose.yml ps
 
 # Deploy the application package (Phase 6+)
-uv run python scripts/deploy_vespa.py
+uv run python scripts/deploy_vespa.py --config-url http://localhost:19072
 ```
 
 ## Ports
 
 | Port  | Purpose                                  |
 |-------|------------------------------------------|
-| 8080  | Query / feed endpoint (`VESPA_ENDPOINT`) |
-| 19071 | Config server (deploy / health check)   |
+| 8089  | Query / feed endpoint on the host (`VESPA_ENDPOINT=http://localhost:8089`) |
+| 19072 | Config server on the host (deploy / health check)   |
 
 ## Data persistence
 

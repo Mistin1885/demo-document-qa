@@ -48,6 +48,10 @@ app = FastAPI(
     version="0.1.0",
     description="NotebookLM-like multi-document Agentic QA over arXiv PDFs.",
     lifespan=lifespan,
+    # Disable Starlette's automatic trailing-slash redirects. Collection routes
+    # are defined without relying on 307 redirects, so streamed proxied requests
+    # from the frontend never need to replay a consumed request body.
+    redirect_slashes=False,
 )
 
 # CORS — Phase 8 frontend (Next.js dev server) calls the API directly.

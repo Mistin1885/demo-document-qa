@@ -146,8 +146,11 @@ def fake_pdf(tmp_path: Path) -> Path:
 async def test_parse_pdf_happy_path(fake_pdf: Path, tmp_parsed_root: Path) -> None:
     output_dir = tmp_parsed_root / DOC_STEM / "hybrid_auto"
     fake_proc = _make_fake_subprocess(returncode=0)
+    seen_args: tuple[Any, ...] | None = None
 
     async def fake_create(*args: Any, **kwargs: Any) -> MagicMock:
+        nonlocal seen_args
+        seen_args = args
         _setup_output_dir(output_dir)
         return fake_proc
 
@@ -164,6 +167,8 @@ async def test_parse_pdf_happy_path(fake_pdf: Path, tmp_parsed_root: Path) -> No
     assert result.mineru_backend == "hybrid"
     assert result.gate_summary.get("gate_pass") is True
     assert result.duration_seconds >= 0.0
+    assert seen_args is not None
+    assert seen_args[seen_args.index("-o") + 1] == str(tmp_parsed_root)
 
 
 # ---------------------------------------------------------------------------

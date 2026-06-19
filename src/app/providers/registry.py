@@ -214,7 +214,7 @@ def build_embedding_provider(profile: ProviderProfileLike) -> EmbeddingProvider:
     ptype = profile.provider_type.lower()
     api_key = _resolve_api_key(profile)
     model = profile.model_name
-    dim = profile.embedding_dim or 1024
+    dim = profile.embedding_dim or 384
 
     if ptype == "openai":
         from app.providers.openai import OpenAIEmbeddingProvider

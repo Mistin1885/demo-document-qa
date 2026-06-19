@@ -1,6 +1,6 @@
 """Async MinerU hybrid-backend client.
 
-This module wraps the MinerU CLI (``uv run mineru -b hybrid-http-client``) as
+This module wraps the MinerU CLI (``mineru -b hybrid-http-client``) as
 a reusable async service that:
 
 1. Invokes MinerU via ``asyncio.create_subprocess_exec``.
@@ -128,8 +128,8 @@ class MinerUClient:
         URL of the vLLM / MinerU OpenAI-compatible server.  Defaults to
         ``app.config.get_settings().mineru_server_url``.
     parsed_root:
-        Root directory for post-processed artefacts.  Output is written to
-        ``<parsed_root>/<pdf_basename>/hybrid_auto/``.
+        Root directory passed to MinerU's ``-o`` argument. MinerU itself
+        creates ``<parsed_root>/<pdf_basename>/hybrid_auto/``.
     timeout_seconds:
         Maximum wall-clock time (seconds) allowed for a single
         ``mineru`` subprocess call.
@@ -203,7 +203,7 @@ class MinerUClient:
             _shutil.rmtree(output_dir)
 
         # --- Run MinerU -------------------------------------------------------
-        output_parent = self._parsed_root / doc_stem
+        output_parent = self._parsed_root
         output_parent.mkdir(parents=True, exist_ok=True)
 
         t0 = time.monotonic()
@@ -280,10 +280,8 @@ class MinerUClient:
             return False
 
     async def _run_mineru_subprocess(self, pdf_path: Path, output_parent: Path) -> None:
-        """Invoke ``uv run mineru`` asynchronously and raise on failure."""
+        """Invoke ``mineru`` asynchronously and raise on failure."""
         cmd = [
-            "uv",
-            "run",
             "mineru",
             "-p",
             str(pdf_path),

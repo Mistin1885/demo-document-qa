@@ -37,10 +37,10 @@ from app.errors import ChatNotFound, SessionNotFound
 from app.models.domain import MessageRead
 from app.models.orm import Chat as ChatORM
 from app.models.orm import ProviderProfile as ProviderProfileORM
-from app.providers.base import ChatProvider, EmbeddingProvider
-from app.providers.mock import MockChatProvider
+from app.providers.base import ChatProvider
+from app.providers.extractive import ExtractiveEvidenceChatProvider
 from app.providers.openai_compat import OpenAICompatChatProvider
-from app.providers.registry import build_chat_provider, build_embedding_provider
+from app.providers.registry import build_chat_provider
 from app.retrieval.service import RetrievalService
 from app.services.qa_service import QAService
 from app.vespa.mock import NullRetrievalService
@@ -102,7 +102,7 @@ def _not_found(detail: str) -> HTTPException:
 
 
 # ---------------------------------------------------------------------------
-# Provider helpers — load real providers from Chat.default_*_profile
+# Provider helpers — load real chat provider; retrieval uses Vespa-native E5.
 # ---------------------------------------------------------------------------
 
 
@@ -110,7 +110,8 @@ def _build_env_chat_provider() -> ChatProvider | None:
     """Build a ChatProvider from env-level ``LLM_*`` settings, if configured.
 
     Returns ``None`` when ``LLM_PROVIDER=mock`` (the default) or required fields
-    are missing, so the caller can fall back to ``MockChatProvider``.
+    are missing, so the caller can fall back to an evidence-grounded extractive
+    provider instead of a mock answer.
 
     ``LLM_API_URL`` is normalised: a trailing ``/chat/completions`` is stripped
     because the OpenAI SDK appends that path itself.
@@ -163,13 +164,12 @@ def _profile_as_like(p: ProviderProfileORM, embedding_dim: int) -> object:
 
 
 async def _load_chat(db: AsyncSession, chat_id: uuid.UUID) -> ChatORM | None:
-    """Load Chat with provider profile relationships eagerly (one query)."""
+    """Load Chat with the default chat profile relationship eagerly."""
     stmt = (
         select(ChatORM)
         .where(ChatORM.id == chat_id)
         .options(
             selectinload(ChatORM.default_chat_profile),
-            selectinload(ChatORM.default_embedding_profile),
         )
     )
     return (await db.scalars(stmt)).first()
@@ -180,9 +180,13 @@ async def _build_providers(
 ) -> tuple[ChatProvider, RetrievalService | NullRetrievalService]:
     """Return (chat_provider, retrieval_service) for this chat.
 
-    Falls back to MockChatProvider / NullRetrievalService when:
+    Falls back to ExtractiveEvidenceChatProvider / NullRetrievalService when:
     - the chat has no default provider profile configured, OR
     - ``vespa_enabled=False`` in settings (for the retrieval service).
+
+    Retrieval intentionally does not read ``default_embedding_profile`` or
+    ``default_reranker_profile``: embeddings and native rerank are computed by
+    the bundled Vespa E5 embedder/rank profiles.
     """
     settings = get_settings()
     chat_orm = await _load_chat(db, chat_id)
@@ -191,34 +195,26 @@ async def _build_providers(
     # Resolution order:
     #   1. Chat's default_chat_profile (DB-stored, encrypted key) — production path.
     #   2. Env-level LLM_* settings — convenience for dev/demo without a DB row.
-    #   3. MockChatProvider — deterministic fallback (tests / unconfigured).
+    #   3. ExtractiveEvidenceChatProvider — evidence-only fallback when the
+    #      deployment has no external chat LLM configured.
     chat_prov: ChatProvider
     if chat_orm is not None and chat_orm.default_chat_profile is not None:
         try:
             profile_like = _profile_as_like(chat_orm.default_chat_profile, settings.embedding_dim)
             chat_prov = build_chat_provider(profile_like)  # type: ignore[arg-type]
         except Exception:
-            chat_prov = _build_env_chat_provider() or MockChatProvider()
+            chat_prov = _build_env_chat_provider() or ExtractiveEvidenceChatProvider()
     else:
-        chat_prov = _build_env_chat_provider() or MockChatProvider()
+        chat_prov = _build_env_chat_provider() or ExtractiveEvidenceChatProvider()
 
-    # --- retrieval service (Vespa + embedding provider) ---
+    # --- retrieval service (Vespa-native embedding + native rerank) ---
     retrieval_svc: RetrievalService | NullRetrievalService
-    if (
-        settings.vespa_enabled
-        and chat_orm is not None
-        and chat_orm.default_embedding_profile is not None
-    ):
-        try:
-            emb_like = _profile_as_like(chat_orm.default_embedding_profile, settings.embedding_dim)
-            emb_prov: EmbeddingProvider = build_embedding_provider(emb_like)  # type: ignore[arg-type]
-            retrieval_svc = RetrievalService(
-                endpoint=settings.vespa_endpoint,
-                embedding_provider=emb_prov,
-                embedding_dim=settings.embedding_dim,
-            )
-        except Exception:
-            retrieval_svc = NullRetrievalService()
+    if settings.vespa_enabled:
+        retrieval_svc = RetrievalService(
+            endpoint=settings.vespa_endpoint,
+            embedding_provider=None,
+            embedding_dim=settings.embedding_dim,
+        )
     else:
         retrieval_svc = NullRetrievalService()
 
@@ -267,7 +263,9 @@ async def post_message(
     except ChatNotFound as exc:
         raise _not_found(str(exc)) from exc
 
-    # Build real providers from chat's configured profiles (fallback to mocks)
+    # Build providers from chat/env config. Without a chat LLM, use the
+    # evidence-grounded extractive fallback; retrieval still uses Vespa native
+    # embedding/rerank.
     from app.db import _get_sessionmaker  # noqa: PLC0415
 
     chat_provider, retrieval_service = await _build_providers(db, chat_id)

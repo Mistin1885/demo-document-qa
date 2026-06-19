@@ -32,6 +32,16 @@ async def test_create_chat_returns_201(api_client: AsyncClient) -> None:
     assert "created_at" in body
 
 
+@pytest.mark.asyncio
+async def test_create_chat_without_trailing_slash_returns_201(
+    api_client: AsyncClient,
+) -> None:
+    response = await api_client.post("/chats", json={"name": "No Redirect"})
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "No Redirect"
+
+
 # ---------------------------------------------------------------------------
 # GET /chats/{chat_id}
 # ---------------------------------------------------------------------------

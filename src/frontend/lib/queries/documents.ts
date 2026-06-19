@@ -34,6 +34,9 @@ export function useDocuments(
     queryKey: chatId ? queryKeys.documents(chatId) : ["__no_chat__", "documents"],
     queryFn: () => listDocuments(chatId!),
     enabled: !!chatId,
+    // Uploaded PDFs are parsed by a backend background task. Poll so the badge
+    // moves from Uploaded/Parsing to Parsed/Failed without a manual refresh.
+    refetchInterval: 3000,
   });
 }
 

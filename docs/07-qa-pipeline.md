@@ -75,7 +75,8 @@ Router: `src/app/api/messages.py:239-298`. Responsibilities, in order:
      **`security.decrypt`** and instantiate the right adapter (`OpenAIChatProvider`
      / `GeminiNativeChatProvider` / `OpenAICompatChatProvider`);
    - otherwise build an `OpenAICompatChatProvider` from `LLM_*` env vars (dev/demo);
-   - otherwise fall back to `MockChatProvider` (tests).
+   - otherwise fall back to `ExtractiveEvidenceChatProvider`, which only
+     summarizes retrieved evidence and emits normal citation markers.
 3. **Build `GenerationConfig`** from the request body, clamped against the
    provider's `context_window`.
 4. **Call `QAService.stream(...)`** and return the async generator as a
@@ -90,9 +91,9 @@ Router: `src/app/api/messages.py:239-298`. Responsibilities, in order:
 2. Construct `AgentState` (see `docs/05-agent-workflow.md` §3): chat_id,
    session_id, question, history, generation_config, empty plan / evidence /
    tool_calls / debug_trace.
-3. Construct `RetrievalService` from the chat's embedding / reranker
-   profiles. The DIM-safety check (`embedding_provider.dimension ==
-   embedding_dim`) fires here — mismatch is surfaced as `error: INTERNAL`.
+3. Construct `RetrievalService` with Vespa native embeddings/rerank. The
+   production path sends `input.query(qvec)=embed(e5, @user_query)` to Vespa;
+   no per-user embedding or reranker profile is required.
 4. Compile the LangGraph via **`build_graph(chat_provider, retrieval_service,
    ...)`** and call `graph.ainvoke({"state": state.model_dump()})`.
 

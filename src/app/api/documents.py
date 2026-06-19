@@ -15,7 +15,15 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi import status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +39,7 @@ from app.errors import (
 )
 from app.models.domain import ChatDocumentRead, DocumentRead
 from app.services import document_service
+from app.services.ingestion_worker import run_mineru_ingestion
 from app.services.vespa_indexer import NullVespaIndexer, VespaIndexer
 from app.storage import LocalBlobStorage
 from app.storage.local import BlobStorage
@@ -86,6 +95,7 @@ def _not_found(detail: str) -> HTTPException:
 async def upload_document(
     chat_id: uuid.UUID,
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     description: str | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
     storage: BlobStorage = Depends(get_storage),
@@ -103,7 +113,7 @@ async def upload_document(
     filename = file.filename or "upload.pdf"
 
     try:
-        return await document_service.upload_document(
+        doc = await document_service.upload_document(
             session,
             chat_id,
             file_bytes=file_bytes,
@@ -113,6 +123,15 @@ async def upload_document(
             storage=storage,
             indexer=indexer,
         )
+        settings = get_settings()
+        if settings.auto_ingest_uploads and settings.app_env != "test":
+            job_id = await document_service.enqueue_ingestion(session, chat_id, doc.id)
+            doc = await document_service.get_document(session, chat_id, doc.id)
+            # Ensure the background task can read the document/job even if it
+            # starts before FastAPI's dependency teardown performs its commit.
+            await session.commit()
+            background_tasks.add_task(run_mineru_ingestion, chat_id, doc.id, job_id)
+        return doc
     except ChatNotFound as exc:
         raise _not_found(str(exc)) from exc
     except InvalidUpload as exc:

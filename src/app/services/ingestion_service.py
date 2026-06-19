@@ -41,7 +41,7 @@ async def feed_document(
     section_enrichments: list[SectionEnrichment],
     document_enrichment: DocumentEnrichment | None,
     facts: list[StructuredFact],
-    embedding_provider: EmbeddingProvider,
+    embedding_provider: EmbeddingProvider | None = None,
     vespa_client: VespaFeedClient,
 ) -> FeedReport:
     """Encode, embed, and feed all enrichment outputs for one document to Vespa.
@@ -50,9 +50,9 @@ async def feed_document(
     --------
     1. Delete existing Vespa chunks (idempotent re-feed — old chunks replaced).
     2. Encode all content into ``VespaChunk`` lists (no embeddings yet).
-    3. Batch-embed all chunk texts in one provider call.
-    4. Validate embedding dimension against ``vespa_client._embedding_dim``.
-    5. Attach embeddings to chunks and call ``vespa_client.feed_chunks``.
+    3. If an embedding provider is supplied, batch-embed all chunk texts.
+       Otherwise, feed chunks without embeddings and let Vespa's configured
+       embedder compute them internally.
 
     Parameters
     ----------
@@ -71,7 +71,8 @@ async def feed_document(
     facts:
         ``StructuredFact`` ORM rows belonging to this document.
     embedding_provider:
-        Provider that converts text → float vectors.
+        Optional provider that converts text → float vectors. Leave ``None``
+        to use Vespa's built-in embedder.
     vespa_client:
         Configured ``VespaFeedClient``.
 
@@ -115,18 +116,19 @@ async def feed_document(
     if not all_chunks:
         return FeedReport()
 
-    # Step 3: batch-embed all chunk texts
-    texts = [chunk.content for chunk in all_chunks]
-    vectors = await embedding_provider.embed(texts)
+    if embedding_provider is not None:
+        # Step 3: batch-embed all chunk texts
+        texts = [chunk.content for chunk in all_chunks]
+        vectors = await embedding_provider.embed(texts)
 
-    # Step 4: validate embedding dimension
-    schema_dim = vespa_client._embedding_dim
-    if vectors and len(vectors[0]) != schema_dim:
-        raise VespaDimensionMismatch(expected=schema_dim, got=len(vectors[0]))
+        # Step 4: validate embedding dimension
+        schema_dim = vespa_client._embedding_dim
+        if vectors and len(vectors[0]) != schema_dim:
+            raise VespaDimensionMismatch(expected=schema_dim, got=len(vectors[0]))
 
-    # Step 5: attach embeddings and feed
-    for chunk, vec in zip(all_chunks, vectors, strict=True):
-        chunk.embedding = vec
+        # Step 5: attach embeddings and feed
+        for chunk, vec in zip(all_chunks, vectors, strict=True):
+            chunk.embedding = vec
 
     return await vespa_client.feed_chunks(all_chunks)
 

@@ -2,8 +2,8 @@
  * Chat API helpers — thin wrappers over the core client.
  *
  * Routes:
- *   POST   /chats/
- *   GET    /chats/
+ *   POST   /chats
+ *   GET    /chats
  *   GET    /chats/{chat_id}
  *   PATCH  /chats/{chat_id}
  *   DELETE /chats/{chat_id}
@@ -13,11 +13,11 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import type { ChatCreate, ChatRead, ChatUpdate } from "./types";
 
 export async function createChat(body: ChatCreate): Promise<ChatRead> {
-  return apiPost<ChatRead>("/chats/", body);
+  return apiPost<ChatRead>("/chats", body);
 }
 
 export async function listChats(): Promise<ChatRead[]> {
-  return apiGet<ChatRead[]>("/chats/");
+  return apiGet<ChatRead[]>("/chats");
 }
 
 export async function getChat(chatId: string): Promise<ChatRead> {

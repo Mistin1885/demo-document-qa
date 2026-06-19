@@ -114,8 +114,9 @@ buildable from `deploy/docker-compose.yml`. Each service has its own image:
 - A running **MinerU-compatible vLLM** on the host at `http://localhost:8001`
   (see `deploy/mineru/README.md`). The backend container reaches it via
   `host.docker.internal:8001` (mapped automatically through `extra_hosts`).
-- (Optional) a real LLM endpoint if you want non-mock answers — pass it
-  through the `LLM_*` env vars (see below).
+- (Optional) a real LLM endpoint for generative answers — pass it through the
+  `LLM_*` env vars (see below). If absent, QA falls back to an extractive,
+  evidence-only answer instead of a mock response.
 
 #### Build + start everything
 
@@ -134,10 +135,10 @@ Healthchecks gate the start order (`postgres` → `backend` → `frontend`).
 
 When all four services are healthy:
 
-- Frontend UI: <http://localhost:3000>
-- Backend API + OpenAPI docs: <http://localhost:8000/docs>
-- Vespa config / query endpoints: <http://localhost:19071>, <http://localhost:8080>
-- Postgres: `localhost:5432` (user `postgres`, db `paper_notebook`)
+- Frontend UI: <http://localhost:3010>
+- Backend API + OpenAPI docs: <http://localhost:9010/docs>
+- Vespa config / query endpoints: <http://localhost:19072>, <http://localhost:8089>
+- Postgres: `localhost:5433` (user `postgres`, db `paper_notebook`)
 
 #### Configuration (override via shell env or a `.env` next to compose)
 
@@ -145,11 +146,13 @@ When all four services are healthy:
 |---|---|---|
 | `APP_ENCRYPTION_KEY` | Fernet key for encrypting provider credentials. **Set this for any real use.** | `dev-only-change-me-32-bytes-base64` |
 | `MINERU_SERVER_URL` | MinerU hybrid VLM endpoint. | `http://host.docker.internal:8001` |
+| `VESPA_ENDPOINT` | Backend-to-Vespa query/feed endpoint. | `http://vespa:8080` |
+| `EMBEDDING_DIM` | Vespa native E5 tensor dimension. Keep at `384` unless you also change the Vespa embedder model/schema. | `384` |
 | `LLM_PROVIDER` | `mock` / `openai_compatible` / `openai` / `gemini_native`. | `mock` |
 | `LLM_API_URL` / `LLM_MODEL` / `LLM_API_KEY` | Env-level fallback LLM used when a chat has no `default_chat_profile`. | empty |
 | `LLM_CONTEXT_WINDOW` | Context budget in tokens. | `10000` |
-| `NEXT_PUBLIC_API_BASE_URL` | **Build-time** URL the browser uses to reach the backend. Rebuild the frontend image after changing it. | `http://localhost:8000` |
-| `CORS_EXTRA_ORIGINS` | Comma-separated extra browser origins the backend will accept. | `http://localhost:3000,http://127.0.0.1:3000` |
+| `NEXT_PUBLIC_API_BASE_URL` | Optional build-time absolute backend URL. Empty means the browser uses the frontend `/api/proxy` route. | empty |
+| `CORS_EXTRA_ORIGINS` | Comma-separated extra browser origins the backend will accept. | `http://localhost:3010,http://127.0.0.1:3010` |
 
 > If you expose the stack on a domain other than `localhost`, rebuild the
 > frontend image with the right base URL — Next inlines public env vars at
@@ -164,7 +167,7 @@ When all four services are healthy:
 The `vespa` container ships empty. After it's healthy, push the schema:
 
 ```bash
-uv run python scripts/deploy_vespa.py        # uses VESPA_ENDPOINT=http://localhost:8080
+uv run python scripts/deploy_vespa.py --config-url http://localhost:19072
 ```
 
 (You can also run the same script from inside the backend container with
@@ -175,15 +178,17 @@ uv run python scripts/deploy_vespa.py        # uses VESPA_ENDPOINT=http://localh
 Once the stack is up and the Vespa schema deployed:
 
 1. Open <http://localhost:3000>.
-2. **Settings → Providers** — register at least a Chat profile (or rely on
-   the env-level `LLM_*` fallback) and an Embedding profile. Connection tests
-   are exposed inline.
+2. **Settings → Providers** — register a Chat profile (or rely on the
+   env-level `LLM_*` fallback) if you want real LLM answers. Embedding and
+   rerank do **not** require user profiles; Vespa computes them with the
+   bundled native E5 embedder.
 3. **Chats → New chat** — every chat is its own isolation boundary
    (CLAUDE.md §2). Pick a default chat profile.
 4. Inside the chat, **Documents → Upload**, drop in an arXiv PDF. The
    backend streams it through MinerU (hybrid client → vLLM @ host:8001),
    parses `middle.json` into `ParsedBlock`s, runs enrichment, and feeds
-   chunks + embeddings into Vespa under that `chat_id`.
+   chunks into Vespa under that `chat_id`; Vespa computes document embeddings
+   during indexing.
 5. When ingestion shows "ready", open the **Chat** pane and ask a question.
    The LangGraph agent will retrieve only over this chat's documents and
    stream the answer over SSE, with citations back to the source pages.
@@ -201,33 +206,7 @@ MinerU output cache (`/app/data/parsed`); the `postgres_data` and
 
 ---
 
-## 5. Running tests
-
-```bash
-uv run ruff check .                              # lint
-uv run mypy src/app                              # type-check (95 source files clean)
-uv run pytest -q                                 # full suite (~387 tests, ~2 s)
-uv run pytest tests/unit -q
-uv run pytest tests/integration -q
-uv run pytest tests/evaluation -q                # parser + retrieval + QA + goal score
-uv run pytest tests/e2e -q                       # cross-stack chat / session isolation
-
-# Frontend
-npm --prefix src/frontend run lint
-npm --prefix src/frontend run typecheck
-npm --prefix src/frontend run test
-npm --prefix src/frontend run build
-```
-
-CLAUDE.md §12.1 caps each test file at ≤ 10 collect-only items; the suite enforces this via:
-
-```bash
-uv run pytest --collect-only -q | awk -F'::' '/::/{print $1}' | sort | uniq -c | sort -rn | head
-```
-
----
-
-## 6. Evaluation harnesses & reports
+## 5. Evaluation harnesses & reports
 
 All harnesses are deterministic and run without paid APIs.
 
@@ -260,7 +239,7 @@ Current results (this commit):
 
 ---
 
-## 7. Isolation contract (CLAUDE.md §2)
+## 6. Isolation contract (CLAUDE.md §2)
 
 Four layers — none may be skipped:
 
@@ -273,7 +252,7 @@ Citations are checked twice: `PolicyEngine.enforce_citations` drops drafts whose
 
 ---
 
-## 8. Provider settings
+## 7. Provider settings
 
 Chat, embedding and reranker profiles are independent. Supported provider types:
 
@@ -285,36 +264,3 @@ Chat, embedding and reranker profiles are independent. Supported provider types:
 API keys are encrypted at rest via Fernet (`APP_ENCRYPTION_KEY`) — never logged, never returned to the frontend (masked everywhere). Connection-test endpoints validate model+latency and return sanitised error strings.
 
 For demo without a DB row, env-level fallback variables (`LLM_PROVIDER` / `LLM_API_URL` / `LLM_MODEL` / `LLM_API_KEY`) build a `OpenAICompatChatProvider` on the fly — see `scripts/smoke_agent_e2e.py` for an end-to-end demo.
-
----
-
-## 9. Known limitations & next steps
-
-### Not validated in this environment
-- **Vespa cluster (live)** — the application package deploys via `scripts/deploy_vespa.py --dry-run` and the schema validates locally; spinning up `docker compose ... vespa` and feeding live data was previously executed but is not part of the CI regression. Retrieval evaluation uses a fake transport that replays the real RetrievalService logic against a fixture corpus.
-- **MinerU multi-paper sweep** — Phase 1 PoC was run on one paper (LightRAG `2410.05779v3`) and passed all reliability checks; the harness supports more papers, but the included golden corpus has one entry.
-- **Real LLM E2E** — `scripts/smoke_agent_e2e.py` was run during Phase 7 against Gemma-4-31B-it via vLLM; the regression suite uses deterministic mocks only.
-
-### Three most important next improvements
-1. **Live Vespa CI lane** — extend `docker compose up vespa` + retrieval feed/query smoke tests into the regression so the YQL builder is exercised against the real engine, not only the fake transport.
-2. **Multi-paper parser sweep** — expand `data/fixtures/golden/` with 2–3 additional arXiv papers covering different layouts and re-tighten parser-eval thresholds.
-3. **Real-LLM CI nightly** — keep mocks for fast tests but add a nightly nightly that runs `smoke_agent_e2e.py` against the configured vLLM endpoint so prompt regressions are caught.
-
----
-
-## 10. Phase summary
-
-| Phase | Status | Goal block | Highlight |
-|---|---|---|---|
-| 0 — Bootstrap | ✅ | — | `src/app` layout + uv + Makefile |
-| 1 — MinerU PoC | ✅ | — | hybrid client direct to vLLM @ 8001 (no wrapper) |
-| 2 — Foundation | ✅ | Backend 10/10 | Alembic, ORM, providers, encryption, compose |
-| 3 — Chat/Session/Doc | ✅ | Isolation core | 4-layer isolation tests |
-| 4 — Parsing pipeline | ✅ | Parsing 15/15 | middle.json → ParsedBlock + hierarchy |
-| 5 — Enrichment | ✅ | — | section/doc summaries, facts, manifest |
-| 6 — Vespa retrieval | ✅ | Retrieval 20/20 | RRF + native/cross-encoder rerank, leakage=0 |
-| 7 — LangGraph agent | ✅ | Agent QA 20/20 | 15 nodes, 7 tools, 14 policies, SSE |
-| 8 — Frontend | ✅ | Frontend 10/10 | Next.js 15 + 3-region UI + Settings |
-| 9 — Evaluation & repair | ✅ | Goal 100/100 | Golden QA + E2E + goal-score scorer |
-
-See `artifacts/final-report.md` for the full 20-item delivery summary (GUIDE §29).

@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -21,8 +21,8 @@ services:
   vespa:
     image: vespaengine/vespa:8
     ports:
-      - "8080:8080"
-      - "19071:19071"
+      - "8089:8080"
+      - "19072:19071"
     volumes:
       - vespa_data:/opt/vespa/var
     healthcheck:
@@ -63,10 +63,10 @@ services:
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
       LLM_CONTEXT_WINDOW: ${LLM_CONTEXT_WINDOW:-10000}
       # Allow the frontend container's browser-origin to call the API.
-      CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      CORS_EXTRA_ORIGINS: ${CORS_EXTRA_ORIGINS:-http://localhost:3010,http://127.0.0.1:3010}
       APP_ENV: production
     ports:
-      - "8000:8000"
+      - "9010:8000"
     volumes:
       # Persist uploaded PDFs and MinerU output across restarts.
       - backend_data:/app/data
@@ -80,15 +80,21 @@ services:
       context: ..
       dockerfile: deploy/frontend/Dockerfile
       args:
-        # Inlined into the client bundle by Next at build time. Override with
-        # `NEXT_PUBLIC_API_BASE_URL=... docker compose build frontend`.
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+        # Intentionally unset so the bundle uses the /api-proxy relative prefix
+        # and Next.js rewrites() forwards requests to the backend container.
+        # Override only if you need direct absolute URL (e.g. local dev):
+        #   NEXT_PUBLIC_API_BASE_URL=http://<host>:9010 docker compose build frontend
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     image: paper-notebook-agent/frontend:latest
     depends_on:
       backend:
         condition: service_started
+    environment:
+      # Runtime env — read by the Route Handler proxy at request time.
+      # Must point to the backend container via the internal Docker network.
+      BACKEND_URL: http://backend:8000
     ports:
-      - "3000:3000"
+      - "3010:3000"
     restart: unless-stopped
 
 volumes:

@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <services version="1.0">
   <container id="default" version="1.0">
-    <search>
-      <query-timeout>5.0</query-timeout>
-    </search>
+    <search/>
     <document-api/>
+    <component id="e5" type="hugging-face-embedder">
+      <transformer-model url="https://huggingface.co/intfloat/e5-small-v2/resolve/main/model.onnx"/>
+      <tokenizer-model url="https://huggingface.co/intfloat/e5-small-v2/raw/main/tokenizer.json"/>
+      <prepend>
+        <query>query: </query>
+        <document>passage: </document>
+      </prepend>
+    </component>
     <document-processing/>
   </container>
   <content id="documents" version="1.0">
     <redundancy>1</redundancy>
     <documents>
-      <document name="document_chunk" type="document_chunk" mode="index"/>
+      <document type="document_chunk" mode="index"/>
     </documents>
     <group>
       <node distribution-key="0" hostalias="node1"/>

@@ -199,7 +199,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     model:
         Embedding model name (e.g., ``"text-embedding-3-large"``).
     dimension:
-        Expected output dimension.  Defaults to 1024 (matches default
+        Expected output dimension.  Defaults to 384 (matches default
         ``EMBEDDING_DIM`` in config).
     """
 
@@ -207,7 +207,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         self,
         api_key: str,
         model: str = "text-embedding-3-large",
-        dimension: int = 1024,
+        dimension: int = 384,
     ) -> None:
         self._api_key = api_key
         self._model = model

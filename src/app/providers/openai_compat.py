@@ -226,7 +226,7 @@ class OpenAICompatEmbeddingProvider(EmbeddingProvider):
         api_key: str,
         base_url: str,
         model: str,
-        dimension: int = 1024,
+        dimension: int = 384,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url
