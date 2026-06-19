@@ -3,9 +3,11 @@
  *
  * Modes:
  *   LOCAL (default, NEXT_PUBLIC_USE_LOCAL_PROFILES=true or unset):
- *     All CRUD goes to localStorage. Test connection returns a stub error.
+ *     CRUD goes to localStorage. testConnection() posts the profile body inline
+ *     to the stateless backend route POST /provider_profiles/test_connection
+ *     so the real LLM / embedding / reranker is probed end-to-end.
  *   REMOTE (NEXT_PUBLIC_USE_LOCAL_PROFILES=false):
- *     Delegates to the backend REST API once it is implemented.
+ *     Delegates full CRUD to the backend REST API.
  *
  * Switch point: set NEXT_PUBLIC_USE_LOCAL_PROFILES=false in .env.local and
  *   add the backend routes POST/GET/PATCH/DELETE /provider_profiles.
@@ -80,6 +82,11 @@ interface LocalProviderEntry extends ProviderProfileRead {
 }
 
 const LS_KEY = "pna_provider_profiles";
+// Plaintext keys live in a SEPARATE bucket so that the metadata bucket
+// (returned by listProviderProfiles after stripping _has_key) can never
+// accidentally leak the key. UI components must never read from this bucket
+// directly — only testConnection() resolves it just-in-time.
+const LS_KEY_PLAINTEXT_KEYS = "pna_provider_keys";
 
 function isLocalMode(): boolean {
   if (typeof process === "undefined") return true;
@@ -97,6 +104,28 @@ function lsAll(): LocalProviderEntry[] {
 
 function lsSave(entries: LocalProviderEntry[]): void {
   localSet(LS_KEY, entries);
+}
+
+function lsKeysAll(): Record<string, string> {
+  return localGet<Record<string, string>>(LS_KEY_PLAINTEXT_KEYS) ?? {};
+}
+
+function lsKeySet(profileId: string, key: string | null): void {
+  const bundle = lsKeysAll();
+  if (key && key.trim()) {
+    bundle[profileId] = key;
+  } else {
+    delete bundle[profileId];
+  }
+  localSet(LS_KEY_PLAINTEXT_KEYS, bundle);
+}
+
+function lsKeyDelete(profileId: string): void {
+  const bundle = lsKeysAll();
+  if (profileId in bundle) {
+    delete bundle[profileId];
+    localSet(LS_KEY_PLAINTEXT_KEYS, bundle);
+  }
 }
 
 function nowIso(): string {
@@ -153,6 +182,7 @@ export async function createProviderProfile(
     }
     all.push(entry);
     lsSave(all);
+    lsKeySet(entry.id, body.api_key_plaintext ?? null);
     const { _has_key: _k, ...out } = entry;
     return out;
   }
@@ -194,6 +224,11 @@ export async function updateProviderProfile(
     }
     all[all.findIndex((e) => e.id === id)] = updated;
     lsSave(all);
+    // Only touch the key bucket if the caller explicitly passed
+    // api_key_plaintext (an undefined value means "leave existing key alone").
+    if (body.api_key_plaintext !== undefined) {
+      lsKeySet(id, body.api_key_plaintext);
+    }
     const { _has_key: _k, ...out } = updated;
     return out;
   }
@@ -203,6 +238,7 @@ export async function updateProviderProfile(
 export async function deleteProviderProfile(id: string): Promise<void> {
   if (isLocalMode()) {
     lsSave(lsAll().filter((e) => e.id !== id));
+    lsKeyDelete(id);
     return;
   }
   return apiDelete(`/provider_profiles/${id}`);
@@ -210,11 +246,27 @@ export async function deleteProviderProfile(id: string): Promise<void> {
 
 export async function testConnection(id: string): Promise<TestConnectionResult> {
   if (isLocalMode()) {
-    return {
-      ok: false,
-      error: "Backend provider profiles API not yet implemented",
-      stub: true,
-    };
+    // Local profiles are not persisted on the backend, but we still need a
+    // real network probe. We resolve the profile from localStorage, gather
+    // the key, and POST the body inline to the stateless backend endpoint.
+    // The key is sent over the proxied request once; nothing is stored.
+    const all = lsAll();
+    const entry = all.find((e) => e.id === id);
+    if (!entry) {
+      return { ok: false, error: `Profile ${id} not found in localStorage` };
+    }
+    const api_key_plaintext = lsKeysAll()[id] ?? null;
+    return apiPost<TestConnectionResult>(
+      `/provider_profiles/test_connection`,
+      {
+        kind: entry.kind,
+        provider_type: entry.provider_type,
+        model: entry.model,
+        base_url: entry.base_url,
+        api_key_plaintext,
+        context_window: entry.context_window,
+      }
+    );
   }
   return apiPost<TestConnectionResult>(`/provider_profiles/${id}/test_connection`, {});
 }

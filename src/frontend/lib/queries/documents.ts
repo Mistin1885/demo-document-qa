@@ -27,6 +27,16 @@ import type { DocumentRead, ChatManifest } from "@/lib/api/types";
 // useDocuments — list all documents for a chat
 // ---------------------------------------------------------------------------
 
+// A document is "settled" once ingestion can no longer transition its status
+// on the backend (see app.services.ingestion_worker). Anything else means a
+// background task is still mutating the row, so we keep polling.
+const TERMINAL_STATUSES = new Set<DocumentRead["status"]>(["indexed", "failed"]);
+
+function hasInFlightDocument(docs: DocumentRead[] | undefined): boolean {
+  if (!docs || docs.length === 0) return false;
+  return docs.some((d) => !TERMINAL_STATUSES.has(d.status));
+}
+
 export function useDocuments(
   chatId: string | null
 ): UseQueryResult<DocumentRead[], Error> {
@@ -34,9 +44,11 @@ export function useDocuments(
     queryKey: chatId ? queryKeys.documents(chatId) : ["__no_chat__", "documents"],
     queryFn: () => listDocuments(chatId!),
     enabled: !!chatId,
-    // Uploaded PDFs are parsed by a backend background task. Poll so the badge
-    // moves from Uploaded/Parsing to Parsed/Failed without a manual refresh.
-    refetchInterval: 3000,
+    // Poll only while at least one document is still being parsed/enriched/
+    // indexed. Once every document is `indexed` or `failed`, stop polling so
+    // we don't spam the backend (and the network tab) forever.
+    refetchInterval: (query) =>
+      hasInFlightDocument(query.state.data) ? 3000 : false,
   });
 }
 

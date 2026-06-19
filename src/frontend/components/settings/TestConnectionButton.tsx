@@ -3,8 +3,8 @@
 /**
  * TestConnectionButton — fires test_connection and renders result inline.
  *
- * In local-mode the backend API is not wired; returns a stub badge
- * indicating "stub: backend not wired".
+ * Both local-mode and remote-mode call the backend probe; the difference is
+ * only where the profile body comes from (localStorage vs DB).
  */
 
 import { useState } from "react";
