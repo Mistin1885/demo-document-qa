@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.agent.budget import COVERAGE_SIMILARITY_THRESHOLD
 from app.agent.state import AgentState, CoverageRequirement
 
 
@@ -33,6 +34,43 @@ def _token_overlap(text_a: str, text_b: str) -> int:
     # Ignore very short stop-words
     stop = {"the", "a", "an", "of", "in", "for", "and", "or", "to", "is", "are", "that"}
     return len((tokens_a - stop) & (tokens_b - stop))
+
+
+_SEMANTIC_EQUIVALENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ablation", ("without component", "with and without", "removed", "ablated")),
+    ("performance", ("result", "results", "score", "accuracy", "f1", "benchmark")),
+    ("formula", ("equation", "latex", "mathematical expression")),
+    ("image", ("figure", "plot", "diagram", "caption")),
+    ("table", ("tabular", "row", "column")),
+)
+
+
+def _semantic_equivalent_match(requirement: str, content: str) -> bool:
+    """Small deterministic fallback for common paper-QA synonyms."""
+    req = requirement.lower()
+    ev = content.lower()
+    for anchor, variants in _SEMANTIC_EQUIVALENTS:
+        if anchor in req and any(v in ev for v in variants):
+            return True
+        if any(v in req for v in variants) and anchor in ev:
+            return True
+    return False
+
+
+def _score_requirement(requirement: str, content: str, vector_score: float | None) -> float:
+    """Return a semantic coverage score for one requirement/evidence pair.
+
+    Preferred signal is Vespa's native vector similarity.  When unavailable,
+    fall back to lexical overlap and a compact synonym table for paper QA
+    terminology such as ``ablation`` ↔ ``without component``.
+    """
+    if vector_score is not None and vector_score >= COVERAGE_SIMILARITY_THRESHOLD:
+        return vector_score
+    if _token_overlap(requirement, content) > 0:
+        return 0.4
+    if _semantic_equivalent_match(requirement, content):
+        return COVERAGE_SIMILARITY_THRESHOLD
+    return 0.0
 
 
 async def check_coverage(state: AgentState) -> dict[str, Any]:
@@ -49,7 +87,7 @@ async def check_coverage(state: AgentState) -> dict[str, Any]:
         # Find evidence that overlaps with this requirement
         matched_ids: list[str] = []
         for ev in state.evidence_items:
-            if _token_overlap(req.description, ev.content) > 0:
+            if _score_requirement(req.description, ev.content, ev.vector_score) > 0:
                 matched_ids.append(ev.evidence_id)
 
         if matched_ids:
@@ -91,4 +129,4 @@ async def check_coverage(state: AgentState) -> dict[str, Any]:
     }
 
 
-__all__ = ["check_coverage"]
+__all__ = ["check_coverage", "_score_requirement", "_token_overlap"]
