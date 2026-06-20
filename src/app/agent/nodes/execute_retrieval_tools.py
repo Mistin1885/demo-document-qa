@@ -87,7 +87,7 @@ def _grep_source_types(query: str) -> list[str] | None:
         source_types.append("figure_caption")
     if "table" in q_lower or "<table" in q_lower or "win rate" in q_lower:
         source_types.append("table_record")
-    if any(marker in q_lower for marker in ("formula", "equation", "expression")):
+    if any(marker in q_lower for marker in ("formula", "equation", "expression", "公式", "方程", "數學式", "数学式", "算式")):
         source_types.extend(["raw_block", "equation"])
     if any(marker in q_lower for marker in ("ablation", "performance", "score", "overall", "cost", "token", "api")):
         source_types.extend(["table_record", "performance_fact", "raw_block"])
@@ -108,6 +108,8 @@ def _grep_params(state: AgentState, query: str) -> GrepDocumentChunksParams:
         source_types=_grep_source_types(query),
         required_terms=_extract_required_terms(query),
         include_html=include_html,
+        include_context=True,
+        context_chars=2_000 if state.generation_config.deep_qa_mode else 1_200,
         scan_limit=1_000 if state.generation_config.deep_qa_mode else 500,
         limit=12 if state.generation_config.deep_qa_mode else 8,
         max_tokens=10_000 if state.generation_config.deep_qa_mode else 6_000,

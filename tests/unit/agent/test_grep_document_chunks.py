@@ -111,7 +111,8 @@ async def test_grep_prefers_exact_figure_label_over_wrong_figure() -> None:
     )
 
     assert invocation.record.status == "ok"
-    assert invocation.evidence[0].content.startswith("Figure 2")
+    assert "Figure 2" in invocation.evidence[0].content
+    assert "Figure 1" not in invocation.evidence[0].content
     assert "610" in invocation.evidence[0].content
     assert invocation.evidence[0].origin_tool == "grep_document_chunks"
 
@@ -150,3 +151,47 @@ async def test_grep_preserves_html_table_chunks_when_requested() -> None:
     assert "<table>" in invocation.evidence[0].content
     assert "-High" in invocation.evidence[0].content
     assert "84.8%" in invocation.evidence[0].content
+
+
+@pytest.mark.asyncio
+async def test_grep_expands_graph_generation_formula_neighbor_context() -> None:
+    lead_in = (
+        "We formally represent this graph generation module as follows:"
+    )
+    formula = (
+        r"$\hat {\mathcal {D}} = (\hat {\mathcal {V}}, \hat {\mathcal {E}}) "
+        r"= \operatorname {D e d u p e} \circ \operatorname {P r o f} "
+        r"(\mathcal {V}, \mathcal {E}), \quad \mathcal {V}, \mathcal {E} "
+        r"= \cup_ {\mathcal {D} _ {i} \in \mathcal {D}} "
+        r"\operatorname {R e c o g} (\mathcal {D} _ {i})$"
+    )
+    nodes = [
+        _node(node_type="paragraph", title=None, content=lead_in, order_index=1),
+        _node(node_type="equation", title=None, content=formula, order_index=2),
+        _node(
+            node_type="paragraph",
+            title=None,
+            content="where the resulting knowledge graphs are produced by recognition, profiling, and deduplication.",
+            order_index=3,
+        ),
+    ]
+
+    invocation = await grep_document_chunks(
+        _state("graph generation module 的公式是什麼"),
+        GrepDocumentChunksParams(
+            query="graph generation module 的公式是什麼",
+            source_types=["raw_block", "equation"],
+            include_context=True,
+            context_chars=2_000,
+            limit=1,
+        ),
+        deps=_deps(nodes),
+    )
+
+    assert invocation.record.status == "ok"
+    content = invocation.evidence[0].content
+    assert "graph generation module" in content
+    assert r"\hat {\mathcal {D}}" in content
+    assert "D e d u p e" in content
+    assert "P r o f" in content
+    assert "R e c o g" in content

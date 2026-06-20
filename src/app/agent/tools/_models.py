@@ -112,6 +112,8 @@ class GrepDocumentChunksParams(BaseModel):
     source_types: list[str] | None = None
     required_terms: list[str] = Field(default_factory=list, max_length=12)
     include_html: bool = False
+    include_context: bool = True
+    context_chars: int = Field(default=1_200, ge=0, le=10_000)
     scan_limit: int = Field(default=500, ge=1, le=5_000)
     limit: int = Field(default=8, ge=1, le=50)
     max_tokens: int = Field(default=6_000, ge=1)
