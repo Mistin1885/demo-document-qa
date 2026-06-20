@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 from app.enrichment.models import DocumentEnrichment, SectionEnrichment
 from app.models.orm import StructuredFact
+from app.parsing.figure_narrator import FigureNarration
 from app.parsing.models import BlockType, DocumentNodeOut, ParsedBlock
 from app.vespa.feed import VespaChunk, make_vespa_id
 
@@ -494,10 +495,113 @@ def encode_structured_facts(
     return chunks
 
 
+# ---------------------------------------------------------------------------
+# encode_figure_narrations  (multimodal narration chunks)
+# ---------------------------------------------------------------------------
+
+
+_NARRATION_TEXT_LIMIT = 4000
+"""Cap the embedded narration text size so a runaway VLM response doesn't blow
+out the per-chunk token budget."""
+
+
+def _compose_narration_content(narration: FigureNarration) -> str:
+    """Build the chunk text that gets embedded for one figure / table.
+
+    The reference design (see ``ref/src/app/modules/document_parser/infra/vision/image_narrator.py``)
+    co-locates the page text with the narration so a single embedding captures
+    both the visual semantics and the textual context.  We preserve that by
+    laying out:
+
+        [caption]
+        [VLM narration]
+        Same-page context:
+        [page text excerpt]
+
+    Empty sections are omitted so short captions don't dilute the signal.
+    """
+    parts: list[str] = []
+    if narration.caption:
+        parts.append(narration.caption.strip())
+    if narration.narrative_text:
+        parts.append(narration.narrative_text.strip())
+    if narration.footnote:
+        parts.append(f"Footnote: {narration.footnote.strip()}")
+    if narration.page_text_excerpt.strip():
+        parts.append("Same-page context:\n" + narration.page_text_excerpt.strip())
+    content = "\n\n".join(p for p in parts if p)
+    if len(content) > _NARRATION_TEXT_LIMIT:
+        content = content[:_NARRATION_TEXT_LIMIT] + " …"
+    return content
+
+
+def encode_figure_narrations(
+    narrations: list[FigureNarration],
+    *,
+    created_at: int | None = None,
+) -> list[VespaChunk]:
+    """Encode VLM-produced figure / table narrations as Vespa chunks.
+
+    Source type mapping:
+    - ``BlockType.table`` → ``"table_record"``
+    - ``BlockType.image`` → ``"figure_caption"``
+
+    Each narration produces exactly one chunk whose ``content`` blends the
+    caption, the narration, and the same-page text excerpt so retrieval can
+    surface the chunk from either a visual query (e.g. "the figure that
+    compares latency on COCO") or a textual one.
+    """
+    ts = created_at if created_at is not None else _now_epoch_ms()
+    chunks: list[VespaChunk] = []
+
+    for narration in narrations:
+        if narration.error or not narration.narrative_text.strip():
+            # Failed narrations are skipped — raw_block encoder still indexes the
+            # caption text, so we don't lose retrievability entirely.
+            continue
+
+        source_type = (
+            "table_record"
+            if narration.block_type == BlockType.table
+            else "figure_caption"
+        )
+        content = _compose_narration_content(narration)
+        if not content:
+            continue
+
+        chunks.append(
+            VespaChunk(
+                vespa_document_id=make_vespa_id(
+                    narration.document_id,
+                    source_type,
+                    narration.block_id,
+                    narration.reading_order,
+                ),
+                chat_id=_uuid_str(narration.chat_id),
+                document_id=_uuid_str(narration.document_id),
+                source_node_id=_uuid_str(narration.block_id),
+                parent_node_id=None,
+                source_type=source_type,
+                title=(narration.caption or narration.image_path or "")[:200],
+                heading_path=narration.caption or "",
+                content=content,
+                page_start=narration.page_number,
+                page_end=narration.page_number,
+                order_index=narration.reading_order,
+                token_count=_estimate_tokens(content),
+                embedding=[],
+                created_at=ts,
+            )
+        )
+
+    return chunks
+
+
 __all__ = [
     "CHUNK_TARGET_TOKENS",
     "encode_chunks_from_section",
     "encode_document_overview",
+    "encode_figure_narrations",
     "encode_raw_blocks",
     "encode_section_summary",
     "encode_structured_facts",

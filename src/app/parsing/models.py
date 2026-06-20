@@ -81,10 +81,13 @@ class TableRef(BaseModel):
     """Metadata about a table extracted from a MinerU ``table`` block.
 
     ``html_body`` is the raw ``<table>…</table>`` HTML fragment produced by
-    MinerU (rowspan/colspan preserved).
+    MinerU (rowspan/colspan preserved).  ``image_path`` is the renamed
+    basename of the table crop on disk (under ``images/``); empty when MinerU
+    did not emit a crop for this table.
     """
 
     html_body: str  # <table>...</table> HTML; empty string if not found
+    image_path: str = ""  # renamed basename, empty if no crop
     caption: str | None = None
     footnote: str | None = None
 

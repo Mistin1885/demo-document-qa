@@ -20,11 +20,13 @@ import uuid
 from app.enrichment.models import DocumentEnrichment, SectionEnrichment
 from app.errors import VespaDimensionMismatch
 from app.models.orm import StructuredFact
+from app.parsing.figure_narrator import FigureNarration
 from app.parsing.models import DocumentNodeOut, ParsedBlock
 from app.providers.base import EmbeddingProvider
 from app.vespa.encoders import (
     encode_chunks_from_section,
     encode_document_overview,
+    encode_figure_narrations,
     encode_raw_blocks,
     encode_section_summary,
     encode_structured_facts,
@@ -41,6 +43,7 @@ async def feed_document(
     section_enrichments: list[SectionEnrichment],
     document_enrichment: DocumentEnrichment | None,
     facts: list[StructuredFact],
+    figure_narrations: list[FigureNarration] | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     vespa_client: VespaFeedClient,
 ) -> FeedReport:
@@ -112,6 +115,11 @@ async def feed_document(
 
     # 2e. Structured facts
     all_chunks.extend(encode_structured_facts(facts))
+
+    # 2f. Figure / table narrations (multimodal — VLM-generated text per
+    # image/table block, embedded together with the same-page text).
+    if figure_narrations:
+        all_chunks.extend(encode_figure_narrations(figure_narrations))
 
     if not all_chunks:
         return FeedReport()

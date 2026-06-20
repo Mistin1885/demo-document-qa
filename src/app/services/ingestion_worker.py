@@ -34,8 +34,10 @@ from app.parsing import (
     load_middle_json,
     map_middle_to_parsed_blocks,
 )
+from app.parsing.figure_narrator import FigureNarration, narrate_blocks
 from app.parsing.hierarchy import derive_hierarchy
 from app.parsing.models import BBox, HierarchyResult
+from app.parsing.vlm_client import VLMClient, VLMError
 from app.providers.base import ChatProvider
 from app.providers.mock import MockChatProvider
 from app.providers.registry import build_chat_provider
@@ -152,6 +154,33 @@ async def _replace_document_nodes(
     await session.flush()  # type: ignore[attr-defined]
 
 
+async def _run_figure_narration(
+    blocks: list, images_dir: Path
+) -> list[FigureNarration]:
+    """Run figure / table narration if VLM is configured; never raise.
+
+    Failures here must not abort ingestion — we degrade gracefully to text-only
+    indexing.  Individual block failures are already captured inside
+    ``FigureNarration.error``; the wider try/except catches *configuration*
+    errors (missing VLM_MODEL etc.).
+    """
+    settings = get_settings()
+    if not settings.vlm_enabled:
+        return []
+    try:
+        client = VLMClient()
+    except VLMError as exc:
+        logger.warning("VLM disabled: %s", exc)
+        return []
+    if not images_dir.is_dir():
+        return []
+    try:
+        return await narrate_blocks(blocks, images_dir=images_dir, client=client)
+    except Exception:  # noqa: BLE001
+        logger.exception("Figure narration failed; falling back to text-only indexing")
+        return []
+
+
 async def _persist_enrichment_and_index(
     *,
     chat_id: uuid.UUID,
@@ -169,6 +198,10 @@ async def _persist_enrichment_and_index(
         document_id=document_id,
     )
     hierarchy = derive_hierarchy(blocks, document_id=document_id, chat_id=chat_id)
+
+    # MinerU writes images next to the middle.json under ``<output_dir>/images``.
+    images_dir = middle_json_path.parent / "images"
+    figure_narrations = await _run_figure_narration(blocks, images_dir)
 
     async with sessionmaker() as session:
         doc = await session.get(Document, document_id)
@@ -230,6 +263,7 @@ async def _persist_enrichment_and_index(
         section_enrichments=section_enrichments,
         document_enrichment=document_enrichment,
         facts=list(facts),
+        figure_narrations=figure_narrations,
         vespa_client=vespa_client,
     )
     if report.fail_count:

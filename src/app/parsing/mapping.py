@@ -289,21 +289,24 @@ def _map_table_block(
 ) -> ParsedBlock:
     """Map a MinerU ``table`` block, folding caption/footnote sub-blocks."""
     html_body: str = ""
+    image_path: str = ""
     caption: str | None = None
     footnote: str | None = None
 
     for sub in block.get("blocks", []):
         sub_type = sub.get("type", "")
         if sub_type == "table_body":
-            # HTML is in the "html" field of the table-type span
+            # HTML lives in the "html" field of the table-type span; many
+            # MinerU builds also expose the table crop's image_path on the
+            # same span so the VLM can reconstruct rows the html misses.
             for line in sub.get("lines", []):
                 for span in line.get("spans", []):
                     html = span.get("html")
-                    if isinstance(html, str) and html:
+                    if isinstance(html, str) and html and not html_body:
                         html_body = html
-                        break
-                if html_body:
-                    break
+                    ip = span.get("image_path")
+                    if isinstance(ip, str) and ip and not image_path:
+                        image_path = ip
         elif sub_type == "table_caption":
             caption = _extract_sub_text(sub) or None
         elif sub_type == "table_footnote":
@@ -311,6 +314,7 @@ def _map_table_block(
 
     table_ref = TableRef(
         html_body=html_body,
+        image_path=image_path,
         caption=caption,
         footnote=footnote,
     )

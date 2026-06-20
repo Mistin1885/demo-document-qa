@@ -87,6 +87,28 @@ class Settings(BaseSettings):
     answer_reserve). Drives ``ContextBudgetManager`` when no per-request
     override is supplied."""
 
+    # --- Vision LLM (figure / table narration during ingestion) ---
+    # Default to OpenAI-compatible (matches the self-hosted Gemma-4 vLLM).
+    vlm_provider: Literal["openai_compatible", "openai", "gemini_native"] = (
+        "openai_compatible"
+    )
+    vlm_api_url: str = ""
+    """Endpoint URL. For ``openai_compatible`` either ``.../v1`` or
+    ``.../v1/chat/completions`` is accepted."""
+    vlm_model: str = ""
+    """Model identifier sent in the chat-completion payload, e.g.
+    ``gemma-4-31B-it`` for the self-hosted vLLM."""
+    vlm_api_key: str = "not-needed"
+    """Plaintext key; the self-hosted vLLM accepts the literal value
+    ``not-needed``. For Gemini set it to ``GEMINI_API_KEY``."""
+    vlm_max_tokens: int = 2048
+    vlm_temperature: float = 0.0
+    vlm_timeout: float = 180.0
+    vlm_image_max_side: int = 1024
+    vlm_image_jpeg_quality: int = 90
+    vlm_enabled: bool = True
+    """Set to False to skip figure / table narration entirely (CI / fast dev)."""
+
     # --- Vespa embedding dimension (native E5 schema DIM) ---
     # Matches deploy/vespa/application/services.xml's built-in e5-small-v2
     # Hugging Face embedder. Users should not need to configure an embedding
