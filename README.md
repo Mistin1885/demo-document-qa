@@ -128,8 +128,15 @@ buildable from `deploy/docker-compose.yml`. Each service has its own image:
 |---|---|---|
 | `postgres` | `postgres:16-alpine` | upstream |
 | `vespa` | `vespaengine/vespa:8` | upstream |
-| `backend` | `paper-notebook-agent/backend:latest` | `deploy/backend/Dockerfile` (multi-stage, uv-managed) |
-| `frontend` | `paper-notebook-agent/frontend:latest` | `deploy/frontend/Dockerfile` (Next.js 15 standalone) |
+| `backend` | `mistin1885/paper-notebook-agent-backend:v1.0.0` ([Docker Hub](https://hub.docker.com/r/mistin1885/paper-notebook-agent-backend)) | `deploy/backend/Dockerfile` (multi-stage, uv-managed) |
+| `frontend` | `mistin1885/paper-notebook-agent-frontend:v1.0.0` ([Docker Hub](https://hub.docker.com/r/mistin1885/paper-notebook-agent-frontend)) | `deploy/frontend/Dockerfile` (Next.js 15 standalone) |
+
+The two app images are published to Docker Hub, so you can either **pull**
+the prebuilt tags or **build locally** — `deploy/docker-compose.yml` uses the
+same image names in both cases (via `${BACKEND_IMAGE:-…}` / `${FRONTEND_IMAGE:-…}`
+interpolation, defaulting to the `v1.0.0` tags above). Override the tag at
+the CLI with `IMAGE_TAG=…` (Makefile) or by exporting `BACKEND_IMAGE` /
+`FRONTEND_IMAGE` before running `docker compose`.
 
 #### Prerequisites
 
@@ -141,7 +148,36 @@ buildable from `deploy/docker-compose.yml`. Each service has its own image:
   `LLM_*` env vars (see below). If absent, QA falls back to an extractive,
   evidence-only answer instead of a mock response.
 
-#### Build + start everything
+#### Option A — Pull prebuilt images from Docker Hub (no local build)
+
+The fastest path. `docker compose pull` fetches both app images from Docker
+Hub; `postgres` and `vespa` come from their upstream images as usual.
+
+```bash
+# (one-time) create the external data volumes
+docker volume create deploy_postgres_data
+docker volume create deploy_vespa_data
+docker volume create deploy_backend_data
+
+# pull the two app images from Docker Hub
+docker pull mistin1885/paper-notebook-agent-backend:v1.0.0
+docker pull mistin1885/paper-notebook-agent-frontend:v1.0.0
+
+# bring everything up using the pulled images
+docker compose -f deploy/docker-compose.yml up -d
+
+docker compose -f deploy/docker-compose.yml logs -f backend frontend
+```
+
+To pin a different published tag, override the images at the CLI:
+
+```bash
+BACKEND_IMAGE=mistin1885/paper-notebook-agent-backend:v1.1.0 \
+FRONTEND_IMAGE=mistin1885/paper-notebook-agent-frontend:v1.1.0 \
+  docker compose -f deploy/docker-compose.yml up -d
+```
+
+#### Option B — Build locally
 
 ```bash
 # From repo root (the compose file's build context is the repo root):
@@ -150,6 +186,27 @@ docker compose -f deploy/docker-compose.yml up -d
 
 # Tail the logs of the app services
 docker compose -f deploy/docker-compose.yml logs -f backend frontend
+```
+
+The build produces images tagged
+`mistin1885/paper-notebook-agent-backend:v1.0.0` and
+`mistin1885/paper-notebook-agent-frontend:v1.0.0` — identical to what's on
+Docker Hub — so subsequent `docker compose up` works without changes.
+
+#### Publishing a new version to Docker Hub (maintainers)
+
+```bash
+docker login                                                # once per session
+docker compose -f deploy/docker-compose.yml build backend frontend
+docker push mistin1885/paper-notebook-agent-backend:v1.0.0
+docker push mistin1885/paper-notebook-agent-frontend:v1.0.0
+
+# Bump the tag for subsequent releases, e.g.:
+# BACKEND_IMAGE=mistin1885/paper-notebook-agent-backend:v1.1.0 \
+# FRONTEND_IMAGE=mistin1885/paper-notebook-agent-frontend:v1.1.0 \
+#   docker compose -f deploy/docker-compose.yml build backend frontend
+# docker push mistin1885/paper-notebook-agent-backend:v1.1.0
+# docker push mistin1885/paper-notebook-agent-frontend:v1.1.0
 ```
 
 On first start the backend container automatically runs
