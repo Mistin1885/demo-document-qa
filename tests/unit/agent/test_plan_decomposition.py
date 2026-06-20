@@ -48,4 +48,4 @@ async def test_fact_filter_hints_flow_to_query_structured_facts_params() -> None
     facts = [(name, params) for name, params in invocations if name == "query_structured_facts"]
     assert len(facts) == 1
     assert facts[0][1].kinds == ["ablation", "metric"]
-    assert facts[0][1].keys == ["ablation"]
+    assert facts[0][1].keys is None

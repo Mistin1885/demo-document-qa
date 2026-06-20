@@ -190,7 +190,7 @@ def test_raw_blocks_heading_path_propagated() -> None:
 
 
 def test_raw_blocks_image_and_table_use_caption() -> None:
-    """Image and table blocks expose their captions as content."""
+    """Image caption and table caption/body are exposed as searchable content."""
     from app.parsing.models import ImageRef, TableRef
 
     chat_id, doc_id = uuid.uuid4(), uuid.uuid4()
@@ -214,12 +214,17 @@ def test_raw_blocks_image_and_table_use_caption() -> None:
         text="",
         bbox=_bbox(),
         reading_order=1,
-        table=TableRef(html_body="<table></table>", caption="Table 1 caption"),
+        table=TableRef(
+            html_body="<table><tr><th>Method</th><th>Score</th></tr><tr><td>LightRAG</td><td>73.4</td></tr></table>",
+            caption="Table 1 caption",
+        ),
     )
     chunks = encode_raw_blocks([img_block, tbl_block], chat_id, doc_id)
     assert len(chunks) == 2
     assert chunks[0].content == "Figure 1 caption"
-    assert chunks[1].content == "Table 1 caption"
+    assert "Table 1 caption" in chunks[1].content
+    assert "LightRAG" in chunks[1].content
+    assert "73.4" in chunks[1].content
 
 
 # ---------------------------------------------------------------------------

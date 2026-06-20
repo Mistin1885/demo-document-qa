@@ -140,9 +140,11 @@ def _comparison_gap_queries(question: str) -> list[str]:
 
     first, second = targets
     return [
+        question,
         first,
         second,
         f"{first} {second} differences",
+        f"{first} {second} performance comparison",
         f"{first} architecture",
         f"{second} architecture",
     ]
@@ -190,11 +192,21 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
     elif comparison_path:
         chosen_tools = ["search_hybrid"]
         gap_queries = _comparison_gap_queries(question)
-        information_needs = [
-            "definition and core details for each compared method",
-            "architectural or methodological differences",
-            "performance / result differences when available",
-        ]
+        targets = _extract_comparison_targets(question)
+        if targets is not None:
+            first, second = targets
+            information_needs = [
+                f"evidence about {first}",
+                f"evidence about {second}",
+                f"direct comparison between {first} and {second}",
+                f"performance or cost comparison between {first} and {second}",
+            ]
+        else:
+            information_needs = [
+                "evidence about each compared method",
+                "direct comparison between the methods",
+                "performance / cost differences when available",
+            ]
         rationale = "comparison question: decomposed into method-specific hybrid searches"
     elif numeric_path or ablation_path:
         chosen_tools = ["query_structured_facts", "search_hybrid"]
@@ -206,12 +218,22 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
         if ablation_path:
             gap_queries = [
                 question,
+                "Table 2 ablated versions LightRAG performance",
+                "LightRAG ablation results Table 2",
                 "ablation study",
-                "without component performance",
+                "ablated variants performance numbers",
+                "without component performance score",
                 "with and without component results",
             ]
-            fact_filter_hints = FactFilterHints(kinds=["ablation", "metric"], keys=["ablation"])
-            information_needs.append("ablation / with-without component results")
+            # Do not exact-match ``keys=["ablation"]`` here.  Fact keys are
+            # usually metric / dataset / variant names, so an exact key filter
+            # can hide the ablation facts we are trying to recover.
+            fact_filter_hints = FactFilterHints(kinds=["ablation", "metric"])
+            information_needs = [
+                "ablation table or numeric performance results",
+                "ablated LightRAG variants and removed components",
+                "full LightRAG versus ablated versions performance comparison",
+            ]
             rationale = "ablation question: facts filter plus ablation-specific hybrid searches"
     else:
         chosen_tools = ["search_hybrid"]

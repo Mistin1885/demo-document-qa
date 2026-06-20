@@ -57,6 +57,108 @@ def _semantic_equivalent_match(requirement: str, content: str) -> bool:
     return False
 
 
+def _contains_numeric_or_table_signal(text: str) -> bool:
+    lower = text.lower()
+    return bool(re.search(r"\b\d+(?:\.\d+)?%?\b", text)) or any(
+        marker in lower
+        for marker in (
+            "table",
+            "score",
+            "scores",
+            "win rate",
+            "f1",
+            "accuracy",
+            "metric",
+            "dataset",
+            "performance decline",
+        )
+    )
+
+
+def _comparison_targets_from_requirement(requirement: str) -> tuple[str, str] | None:
+    patterns = (
+        r"between\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+and\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+        r"([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+versus\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+        r"([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+vs\.?\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, requirement, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).lower(), match.group(2).lower()
+    return None
+
+
+def _comparison_targets_from_question(question: str) -> tuple[str, str] | None:
+    patterns = (
+        r"\bbetween\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+and\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+        r"([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+(?:vs\.?|versus)\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+        r"\bcomp(?:are|ared|aring)\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})\s+(?:with|and|to)\s+([A-Za-z][A-Za-z0-9_.+-]{1,80})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, question, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).lower(), match.group(2).lower()
+    return None
+
+
+def _workspace_texts(state: AgentState) -> list[str]:
+    texts = [ev.content for ev in state.evidence_items]
+    for fact in state.structured_facts:
+        value = str(fact.value_numeric) if fact.value_numeric is not None else fact.value_text or ""
+        texts.append(
+            " ".join(
+                part
+                for part in (
+                    fact.kind,
+                    fact.key,
+                    value,
+                    fact.unit or "",
+                    fact.context_excerpt or "",
+                )
+                if part
+            )
+        )
+    return texts
+
+
+def _audit_specialized_coverage(state: AgentState) -> CoverageRequirement | None:
+    """Return an unsatisfied audit requirement when retrieved evidence is too shallow."""
+    if state.plan is None:
+        return None
+
+    rationale = state.plan.rationale.lower()
+    texts = _workspace_texts(state)
+    lowered = [text.lower() for text in texts]
+
+    if "comparison question" in rationale:
+        targets = _comparison_targets_from_question(state.plan.goal)
+        if targets is None:
+            return None
+        first, second = targets
+        has_first = any(first in text for text in lowered)
+        has_second = any(second in text for text in lowered)
+        has_direct = any(first in text and second in text for text in lowered)
+        if not (has_first and has_second and has_direct):
+            return CoverageRequirement(
+                requirement_id="audit-comparison",
+                description=f"direct comparison evidence containing both {first} and {second}",
+            )
+
+    if "ablation question" in rationale:
+        has_ablation = any(
+            any(marker in text for marker in ("ablat", "without", "removed", "-low", "-high", "-origin", "table 2"))
+            for text in lowered
+        )
+        has_results = any(_contains_numeric_or_table_signal(text) for text in texts)
+        if not (has_ablation and has_results):
+            return CoverageRequirement(
+                requirement_id="audit-ablation",
+                description="ablation table or numeric performance results for ablated variants",
+            )
+
+    return None
+
+
 def _score_requirement(requirement: str, content: str, vector_score: float | None) -> float:
     """Return a semantic coverage score for one requirement/evidence pair.
 
@@ -64,6 +166,41 @@ def _score_requirement(requirement: str, content: str, vector_score: float | Non
     fall back to lexical overlap and a compact synonym table for paper QA
     terminology such as ``ablation`` ↔ ``without component``.
     """
+    req_lower = requirement.lower()
+    content_lower = content.lower()
+
+    comparison_targets = _comparison_targets_from_requirement(requirement)
+    if comparison_targets is not None:
+        first, second = comparison_targets
+        if first in content_lower and second in content_lower:
+            if "performance" in req_lower or "cost" in req_lower:
+                return 1.0 if _contains_numeric_or_table_signal(content) else 0.0
+            return 1.0
+        return 0.0
+
+    if "evidence about " in req_lower:
+        target = req_lower.split("evidence about ", 1)[1].strip()
+        if target and target in content_lower:
+            return 1.0
+        return 0.0
+
+    if "ablation" in req_lower or "ablated" in req_lower:
+        needs_numeric = any(
+            marker in req_lower
+            for marker in ("table", "numeric", "performance", "comparison", "versions")
+        )
+        if not needs_numeric and vector_score is not None and vector_score >= COVERAGE_SIMILARITY_THRESHOLD:
+            return vector_score
+        has_ablation_signal = any(
+            marker in content_lower
+            for marker in ("ablat", "without", "removed", "removing", "-low", "-high", "-origin", "table 2")
+        )
+        if not has_ablation_signal:
+            return 0.0
+        if needs_numeric and not _contains_numeric_or_table_signal(content):
+            return 0.0
+        return 1.0
+
     if vector_score is not None and vector_score >= COVERAGE_SIMILARITY_THRESHOLD:
         return vector_score
     if _token_overlap(requirement, content) > 0:
@@ -103,6 +240,12 @@ async def check_coverage(state: AgentState) -> dict[str, Any]:
             updated_reqs.append(req)
 
     # Determine new coverage state
+    audit_req = _audit_specialized_coverage(
+        state.model_copy(update={"coverage_requirements": updated_reqs})
+    )
+    if audit_req is not None and not any(r.requirement_id == audit_req.requirement_id for r in updated_reqs):
+        updated_reqs.append(audit_req)
+
     has_unsatisfied = any(not r.satisfied for r in updated_reqs)
 
     # Route to gap retrieval only if we have budget (iteration_count < 2)

@@ -7,7 +7,13 @@ import uuid
 import pytest
 
 from app.agent.nodes.check_coverage import check_coverage
-from app.agent.state import AgentState, CoverageRequirement, EvidenceItem, make_evidence_id
+from app.agent.state import (
+    AgentPlan,
+    AgentState,
+    CoverageRequirement,
+    EvidenceItem,
+    make_evidence_id,
+)
 
 _CHAT_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 _SESSION_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
@@ -54,3 +60,41 @@ async def test_semantic_synonym_fallback_covers_ablation_without_component() -> 
     )
     result = await check_coverage(state)
     assert result["coverage_requirements"][0].satisfied is True
+
+
+@pytest.mark.asyncio
+async def test_comparison_audit_requires_direct_evidence_for_both_targets() -> None:
+    state = AgentState(
+        chat_id=_CHAT_ID,
+        session_id=_SESSION_ID,
+        question="Compare LightRAG with GraphRAG",
+        plan=AgentPlan(
+            goal="Compare LightRAG with GraphRAG",
+            chosen_tools=["search_hybrid"],
+            rationale="comparison question: decomposed into method-specific hybrid searches",
+        ),
+        coverage_requirements=[],
+        evidence_items=[_evidence("LightRAG uses dual-level graph retrieval.")],
+    )
+    result = await check_coverage(state)
+    assert result["coverage_state"] == "incomplete"
+    assert any(r.requirement_id == "audit-comparison" for r in result["coverage_requirements"])
+
+
+@pytest.mark.asyncio
+async def test_ablation_audit_rejects_mentions_without_results() -> None:
+    state = AgentState(
+        chat_id=_CHAT_ID,
+        session_id=_SESSION_ID,
+        question="Performance of ablated versions of LightRAG",
+        plan=AgentPlan(
+            goal="Performance of ablated versions of LightRAG",
+            chosen_tools=["query_structured_facts", "search_hybrid"],
+            rationale="ablation question: facts filter plus ablation-specific hybrid searches",
+        ),
+        coverage_requirements=[],
+        evidence_items=[_evidence("The evaluation includes model ablation.")],
+    )
+    result = await check_coverage(state)
+    assert result["coverage_state"] == "incomplete"
+    assert any(r.requirement_id == "audit-ablation" for r in result["coverage_requirements"])

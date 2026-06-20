@@ -49,8 +49,8 @@ Do NOT use your own knowledge; rely exclusively on the evidence provided.
 
 
 def _build_context_block(state: AgentState) -> str:
-    """Build a formatted context block from evidence items."""
-    if not state.evidence_items:
+    """Build a formatted context block from evidence items and structured facts."""
+    if not state.evidence_items and not state.structured_facts:
         return ""
 
     manifest_summary = ""
@@ -62,6 +62,20 @@ def _build_context_block(state: AgentState) -> str:
     for idx, ev in enumerate(state.evidence_items, start=1):
         doc_title = ev.section_title or f"doc:{ev.document_id}"
         lines.append(f"[c{idx}] (page {ev.page_start}–{ev.page_end}, {doc_title})\n{ev.content}")
+    if state.structured_facts:
+        lines.append("Structured facts:")
+        for idx, fact in enumerate(state.structured_facts, start=1):
+            value = (
+                str(fact.value_numeric)
+                if fact.value_numeric is not None
+                else (fact.value_text or "")
+            )
+            unit = f" {fact.unit}" if fact.unit else ""
+            page = f", page {fact.page}" if fact.page is not None else ""
+            excerpt = f"\nContext: {fact.context_excerpt}" if fact.context_excerpt else ""
+            lines.append(
+                f"[fact{idx}] ({fact.kind}:{fact.key}{page}) {value}{unit}{excerpt}"
+            )
     return "\n\n".join(lines)
 
 
@@ -98,8 +112,8 @@ async def generate_answer(state: AgentState, chat_provider: ChatProvider) -> dic
             "debug_trace": state.debug_trace,
         }
 
-    # --- No evidence: policy 11 short-circuit ---
-    if not state.evidence_items:
+    # --- No evidence/facts: policy 11 short-circuit ---
+    if not state.evidence_items and not state.structured_facts:
         state.record_event("node_exit", "generate_answer", answer_source="no_evidence_fallback")
         return {
             "answer": _NO_INFO_ANSWER,

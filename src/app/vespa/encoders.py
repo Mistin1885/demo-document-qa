@@ -19,6 +19,7 @@ Design rules (CLAUDE.md §12)
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -50,6 +51,18 @@ def _now_epoch_ms() -> int:
 
 def _uuid_str(v: uuid.UUID | str) -> str:
     return str(v)
+
+
+def _strip_html_table(html: str, *, limit: int = 4_000) -> str:
+    """Convert a small HTML table fragment into searchable plain text."""
+    if not html:
+        return ""
+    text = re.sub(r"</(?:td|th)>", " | ", html, flags=re.IGNORECASE)
+    text = re.sub(r"</tr>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s+", "\n", text).strip()
+    return text[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -107,10 +120,11 @@ def encode_raw_blocks(
         elif block.block_type in (
             BlockType.text,
             BlockType.paragraph,
-            BlockType.equation,
             BlockType.ref_text,
         ):
             content = block.text
+        elif block.block_type == BlockType.equation:
+            content = block.text or block.equation_latex or ""
         elif block.block_type == BlockType.image:
             # Use caption, fallback to image path
             img = block.image
@@ -124,12 +138,16 @@ def encode_raw_blocks(
             content = block.text
         elif block.block_type == BlockType.table:
             tbl = block.table
+            parts: list[str] = []
             if tbl and tbl.caption:
-                content = tbl.caption
-            elif tbl and tbl.html_body:
-                content = tbl.html_body[:500]
-            else:
-                content = ""
+                parts.append(tbl.caption)
+            if tbl and tbl.footnote:
+                parts.append(f"Footnote: {tbl.footnote}")
+            if tbl and tbl.html_body:
+                table_text = _strip_html_table(tbl.html_body)
+                if table_text:
+                    parts.append(f"Table body:\n{table_text}")
+            content = "\n\n".join(parts)
         elif block.block_type in (BlockType.table_caption, BlockType.table_footnote):
             content = block.text
         else:

@@ -47,6 +47,13 @@ def _is_summary_path(state: AgentState) -> bool:
     return _SUMMARY_MARKER in state.plan.rationale or "fetch_structural_nodes" in state.plan.chosen_tools
 
 
+def _search_params(state: AgentState, query: str, *, preset: str) -> SearchHybridParams:
+    """Build search params, widening retrieval when deep QA is enabled."""
+    if state.generation_config.deep_qa_mode:
+        return SearchHybridParams(query=query, preset="broad", top_k=20, max_tokens=12_000)
+    return SearchHybridParams(query=query, preset=preset)
+
+
 def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
     """Expand plan.chosen_tools into a flat list of (tool_name, params) pairs.
 
@@ -64,7 +71,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
             if request.tool == "search_hybrid" and request.query:
                 replan_invocations.append((
                     request.tool,
-                    SearchHybridParams(query=request.query, preset="broad"),
+                    _search_params(state, request.query, preset="broad"),
                 ))
             elif request.tool == "fetch_structural_nodes":
                 replan_invocations.append((
@@ -131,7 +138,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                 for gap_q in remaining_gaps:
                     invocations.append((
                         tool_name,
-                        SearchHybridParams(query=gap_q, preset=preset),  # type: ignore[call-arg]
+                        _search_params(state, gap_q, preset=preset),
                     ))
                 # Always append a default question-based search as well,
                 # but only when there are no gap queries (first round) — if
@@ -142,7 +149,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                 if not remaining_gaps:
                     invocations.append((
                         tool_name,
-                        SearchHybridParams(query=state.question, preset=preset),  # type: ignore[call-arg]
+                        _search_params(state, state.question, preset=preset),
                     ))
 
         elif tool_name == "query_structured_facts":

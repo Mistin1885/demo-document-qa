@@ -47,14 +47,26 @@ async def search_hybrid(
     try:
         if params.preset == "broad":
             final_top_k = min(params.top_k * 2, 60)
+            bm25_top_k = 120
+            ann_top_k = 120
+            fusion_top_k = 160
+            rerank_top_k = 60
         else:
             final_top_k = params.top_k
+            bm25_top_k = 60
+            ann_top_k = 60
+            fusion_top_k = 80
+            rerank_top_k = 30
 
         req = RetrievalRequest(
             chat_id=state.chat_id,  # injected from state — LLM cannot change this
             query=params.query,
             document_ids=params.document_ids,
             source_types=params.source_types,
+            bm25_top_k=bm25_top_k,
+            ann_top_k=ann_top_k,
+            fusion_top_k=fusion_top_k,
+            rerank_top_k=rerank_top_k,
             final_top_k=final_top_k,
             rerank_mode=params.rerank_mode,
         )
