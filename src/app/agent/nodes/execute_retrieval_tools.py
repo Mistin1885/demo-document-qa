@@ -58,6 +58,36 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
       in state.document_manifests (not just the first one).
     - All other tools: single default-params invocation.
     """
+    if state.replan_tool_calls:
+        replan_invocations: list[tuple[str, Any]] = []
+        for request in state.replan_tool_calls:
+            if request.tool == "search_hybrid" and request.query:
+                replan_invocations.append((
+                    request.tool,
+                    SearchHybridParams(query=request.query, preset="broad"),
+                ))
+            elif request.tool == "fetch_structural_nodes":
+                replan_invocations.append((
+                    request.tool,
+                    FetchStructuralNodesParams(
+                        source_types=request.source_types or None,
+                    ),
+                ))
+            elif request.tool == "query_structured_facts":
+                replan_invocations.append((
+                    request.tool,
+                    QueryStructuredFactsParams(
+                        kinds=request.fact_kinds or None,  # type: ignore[arg-type]
+                        keys=request.fact_keys or None,
+                    ),
+                ))
+            elif request.tool == "inspect_document" and request.document_id is not None:
+                replan_invocations.append((
+                    request.tool,
+                    InspectDocumentParams(document_id=request.document_id),
+                ))
+        return replan_invocations
+
     if state.plan is None:
         return []
 
@@ -116,7 +146,16 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                     ))
 
         elif tool_name == "query_structured_facts":
-            invocations.append((tool_name, QueryStructuredFactsParams()))
+            hints = state.plan.fact_filter_hints
+            invocations.append(
+                (
+                    tool_name,
+                    QueryStructuredFactsParams(
+                        kinds=hints.kinds or None,  # type: ignore[arg-type]
+                        keys=hints.keys or None,
+                    ),
+                )
+            )
 
         elif tool_name == "aggregate_sources":
             invocations.append((tool_name, AggregateSourcesParams(strategy="per_section")))
@@ -204,6 +243,7 @@ async def execute_retrieval_tools(state: AgentState, deps: ToolDeps) -> dict[str
         "chat_manifest": new_chat_manifest,
         "document_manifests": new_doc_manifests,
         "debug_trace": state.debug_trace,
+        "replan_tool_calls": [],
     }
 
 

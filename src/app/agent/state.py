@@ -88,6 +88,19 @@ class DocumentManifest(BaseModel):
     source_types: list[str] = Field(default_factory=list)
 
 
+class FactFilterHints(BaseModel):
+    """Restricted hints for ``query_structured_facts`` default params.
+
+    This is intentionally typed instead of ``dict[str, Any]`` so deterministic
+    planner hints cannot smuggle arbitrary tool parameters.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kinds: list[str] = Field(default_factory=list)
+    keys: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # AgentPlan
 # ---------------------------------------------------------------------------
@@ -103,6 +116,29 @@ class AgentPlan(BaseModel):
     chosen_tools: list[str] = Field(default_factory=list)
     rationale: str = ""
     gap_queries: list[str] = Field(default_factory=list)
+    fact_filter_hints: FactFilterHints = Field(default_factory=FactFilterHints)
+
+
+class ReplanToolRequest(BaseModel):
+    """Schema-validated retrieval request nominated by ``llm_replan``.
+
+    No ``chat_id`` field exists here; the executor still injects chat scope
+    solely from ``AgentState``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool: Literal[
+        "search_hybrid",
+        "fetch_structural_nodes",
+        "query_structured_facts",
+        "inspect_document",
+    ]
+    query: str | None = None
+    source_types: list[str] = Field(default_factory=list)
+    fact_kinds: list[str] = Field(default_factory=list)
+    fact_keys: list[str] = Field(default_factory=list)
+    document_id: UUID | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +191,7 @@ class EvidenceItem(BaseModel):
     page_end: int = Field(ge=0)
     content: str
     score: float | None = None
+    vector_score: float | None = None
     section_title: str | None = None
     heading_path: str | None = None
     origin_tool: str
@@ -267,6 +304,12 @@ class GenerationConfig(BaseModel):
     context_window: int | None = Field(default=None, ge=1_000, le=200_000)
     """Total input token budget — drives ``ContextBudgetManager`` size."""
 
+    max_replan_rounds: int | None = Field(default=None, ge=0, le=3)
+    """Optional cap for bounded ``llm_replan`` rounds; hard-capped at 3."""
+
+    deep_qa_mode: bool = False
+    """Frontend-controlled mode: ignore soft budget and include session memory."""
+
 
 class TraceEvent(BaseModel):
     """One append-only event in the agent debug trace.
@@ -367,6 +410,8 @@ class AgentState(BaseModel):
 
     # --- Iteration control ---
     iteration_count: int = Field(ge=0, default=0)
+    replan_rounds: int = Field(ge=0, default=0)
+    replan_tool_calls: list[ReplanToolRequest] = Field(default_factory=list)
 
     # --- Duplicate-tool-call detection ---
     # Stored in-memory as set[str]; serialised as list[str].
@@ -493,7 +538,9 @@ __all__ = [
     "CoverageRequirement",
     "DocumentManifest",
     "EvidenceItem",
+    "FactFilterHints",
     "GenerationConfig",
+    "ReplanToolRequest",
     "StructuredFactSnapshot",
     "ToolCallRecord",
     "TraceEvent",

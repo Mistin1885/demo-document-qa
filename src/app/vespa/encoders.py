@@ -416,6 +416,7 @@ _FACT_KIND_TO_SOURCE_TYPE: dict[str, str] = {
     "benchmark": "performance_fact",
     "dataset": "performance_fact",
     "hyperparameter": "performance_fact",
+    "ablation": "performance_fact",
     "claim": "claim",
     "definition": "definition",
     "technology": "technology_card",

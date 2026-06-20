@@ -84,6 +84,7 @@ async def search_hybrid(
                     page_end=hit.page_end,
                     content=hit.content,
                     score=score,
+                    vector_score=hit.vector_score,
                     section_title=hit.title,
                     heading_path=hit.heading_path,
                     origin_tool="search_hybrid",

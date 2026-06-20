@@ -28,7 +28,13 @@ export type DocumentStatus =
   | "enriching"
   | "indexed"
   | "failed";
-export type FactKind = "metric" | "benchmark" | "dataset" | "hyperparameter" | "other";
+export type FactKind =
+  | "metric"
+  | "benchmark"
+  | "dataset"
+  | "hyperparameter"
+  | "ablation"
+  | "other";
 export type IngestionState = "pending" | "running" | "succeeded" | "failed";
 
 // ---------------------------------------------------------------------------

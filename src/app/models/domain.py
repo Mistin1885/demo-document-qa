@@ -116,7 +116,7 @@ SummaryKind = Literal[
     "chapter_summary", "compact_chapter_summary",
     "document_overview", "technology_card",
 ]
-FactKind = Literal["metric", "benchmark", "dataset", "hyperparameter", "other"]
+FactKind = Literal["metric", "benchmark", "dataset", "hyperparameter", "ablation", "other"]
 IngestionState = Literal["pending", "running", "succeeded", "failed"]
 
 
