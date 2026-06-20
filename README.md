@@ -113,9 +113,88 @@ by exporting `BACKEND_IMAGE` / `FRONTEND_IMAGE` before running `docker compose`.
 ### 4.1 Prerequisites
 
 - Docker Engine ≥ 24 and Docker Compose v2.
-- A running **MinerU-compatible vLLM** on the host at `http://localhost:8001`
-  (see `deploy/mineru/README.md`). The backend container reaches it via
-  `host.docker.internal:8001` (mapped automatically through `extra_hosts`).
+- A running **MinerU VLM server** on the host at `http://localhost:8001`. The
+  backend container reaches it via `host.docker.internal:8001` (mapped
+  automatically through `extra_hosts`). Follow the two steps below to set it up.
+
+  #### Step 1 — Download the MinerU model from HuggingFace
+
+  The model is [`opendatalab/MinerU2.5-2509-1.2B`](https://huggingface.co/opendatalab/MinerU2.5-2509-1.2B)
+  (~2.4 GB). Choose either method:
+
+  ```bash
+  # Option A — huggingface-cli (recommended; supports resume on interruption)
+  pip install "huggingface_hub[cli]"
+  huggingface-cli download opendatalab/MinerU2.5-2509-1.2B \
+      --local-dir ./models/MinerU2.5-2509-1.2B
+
+  # Option B — git lfs
+  git lfs install
+  git clone https://huggingface.co/opendatalab/MinerU2.5-2509-1.2B \
+      ./models/MinerU2.5-2509-1.2B
+  ```
+
+  > **Tip (faster download):** set `HF_HUB_ENABLE_HF_TRANSFER=1` and
+  > `pip install hf_transfer` before running `huggingface-cli download` for
+  > multi-threaded transfer.
+  >
+  > **Behind the GFW?** set `HF_ENDPOINT=https://hf-mirror.com` (or any
+  > HuggingFace mirror) before downloading.
+
+  #### Step 2 — Launch the vLLM server (Docker)
+
+  The recommended way is to use the pre-built vLLM Docker image via
+  `deploy/mineru/docker-compose-mineru.yml`. Requires Docker with the
+  [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+  and a CUDA-capable GPU.
+
+  **2a. Edit the volume mount** to point to where you downloaded the model in Step 1:
+
+  ```yaml
+  # deploy/mineru/docker-compose-mineru.yml (relevant lines)
+  volumes:
+    - /share/model/mineru-2.5:/opt/models/mineru-2.5:ro   # ← change left side to your path
+  ```
+
+  For example, if you downloaded to `./models/MinerU2.5-2509-1.2B`:
+
+  ```bash
+  # Quick one-liner override — no need to edit the file:
+  MODEL_PATH=./models/MinerU2.5-2509-1.2B \
+  docker compose -f deploy/mineru/docker-compose-mineru.yml \
+      run --rm -e "volumes=${MODEL_PATH}:/opt/models/mineru-2.5:ro" vllm-mineru
+  ```
+
+  Or just edit the `volumes:` line directly and then:
+
+  ```bash
+  docker compose -f deploy/mineru/docker-compose-mineru.yml up -d
+  ```
+
+  **2b. Tune parameters for your GPU** — the compose file ships with conservative
+  defaults suited for a single mid-range GPU. Common knobs:
+
+  | Parameter | Default | When to change |
+  |---|---|---|
+  | `--gpu-memory-utilization` | `0.4` | Raise (e.g. `0.8`) if the GPU has spare VRAM; lower if OOM |
+  | `--max-num-seqs` | `4` | Raise for higher PDF-ingestion concurrency; lower to save memory |
+  | `NVIDIA_VISIBLE_DEVICES` / `device_ids` | `'0'` | Change to target a different or multiple GPUs |
+  | `--kv-cache-dtype` | `fp8` | Switch to `auto` if the GPU does not support fp8 (pre-Ada) |
+  | `--enforce-eager` | present | Remove for CUDA graph optimisation on high-end GPUs (trades startup time for throughput) |
+  | `shm_size` | `16g` | Lower on memory-constrained hosts (minimum ~4 g) |
+  | host port | `8001` | Change the left side of `ports: "8001:8000"` if 8001 is taken; update `MINERU_SERVER_URL` to match |
+
+  Verify the server is healthy before starting the main stack:
+
+  ```bash
+  curl -s http://localhost:8001/v1/models | python -m json.tool
+  # Expected output contains: "id": "opendatalab/MinerU2.5-2509-1.2B"
+  ```
+
+  > **No GPU?** The `hybrid-http-client` backend still needs local torch + pipeline
+  > deps for layout/table/OCR processing; only VLM inference is offloaded to the
+  > server. See `deploy/mineru/README.md` for the full compatibility notes.
+
 - (Optional) a real LLM endpoint for generative answers — pass it through the
   `LLM_*` env vars (see below). If absent, QA falls back to an extractive,
   evidence-only answer instead of a mock response.

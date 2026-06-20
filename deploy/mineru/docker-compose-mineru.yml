@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  vllm-mineru:
+    image: vllm/vllm-openai:v0.11.0
+    container_name: vllm-mineru
+    command: >
+      --model /opt/models/mineru-2.5
+      --host 0.0.0.0
+      --port 8000
+      --dtype auto
+      --served-model-name opendatalab/MinerU2.5-2509-1.2B
+      --trust-remote-code
+      --gpu-memory-utilization 0.4
+      --max-num-seqs 4
+      --kv-cache-dtype fp8
+      --enforce-eager
+    ports:
+      - "8001:8000"
+    volumes:
+      - /share/model/mineru-2.5:/opt/models/mineru-2.5:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - VLLM_LOGGING_LEVEL=INFO
+    restart: unless-stopped
+    shm_size: "16g"
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
