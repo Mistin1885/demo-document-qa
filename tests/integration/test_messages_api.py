@@ -387,6 +387,7 @@ async def test_generation_overrides_propagate(
                 "max_answer_tokens": 4096,
                 "temperature": 0.7,
                 "context_window": 20000,
+                "deep_qa_mode": True,
             },
         )
     assert resp.status_code == 200
@@ -395,3 +396,4 @@ async def test_generation_overrides_propagate(
     assert gc.max_answer_tokens == 4096
     assert gc.temperature == 0.7
     assert gc.context_window == 20000
+    assert gc.deep_qa_mode is True

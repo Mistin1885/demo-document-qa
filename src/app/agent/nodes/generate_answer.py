@@ -65,6 +65,16 @@ def _build_context_block(state: AgentState) -> str:
     return "\n\n".join(lines)
 
 
+def _build_session_memory_block(state: AgentState) -> str:
+    """Build recent same-session memory for deep QA follow-up mode."""
+    if not state.generation_config.deep_qa_mode or not state.conversation_history:
+        return ""
+    lines = ["Recent same-session conversation (for resolving follow-up references):"]
+    for turn in state.conversation_history[-8:]:
+        lines.append(f"{turn.role}: {turn.content}")
+    return "\n".join(lines)
+
+
 async def generate_answer(state: AgentState, chat_provider: ChatProvider) -> dict[str, Any]:
     """Call ChatProvider to produce the answer; apply pre-answer policies."""
     state.record_event("node_enter", "generate_answer")
@@ -96,10 +106,14 @@ async def generate_answer(state: AgentState, chat_provider: ChatProvider) -> dic
             "debug_trace": state.debug_trace,
         }
 
+    memory_block = _build_session_memory_block(state)
     context_block = _build_context_block(state)
+    user_content = f"{context_block}\n\nQuestion: {state.question}"
+    if memory_block:
+        user_content = f"{memory_block}\n\n{user_content}"
     messages = [
         ChatMessage(role="system", content=_SYSTEM_PROMPT),
-        ChatMessage(role="user", content=f"{context_block}\n\nQuestion: {state.question}"),
+        ChatMessage(role="user", content=user_content),
     ]
 
     # Per-request overrides (frontend may bump max_tokens for long summaries).

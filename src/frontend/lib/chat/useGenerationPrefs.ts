@@ -53,6 +53,9 @@ export function useGenerationPrefs(chatId: string | null): GenerationPrefsApi {
       if (typeof next.context_window === "number") {
         cleaned.context_window = next.context_window;
       }
+      if (next.deep_qa_mode === true) {
+        cleaned.deep_qa_mode = true;
+      }
       setPrefsState(cleaned);
       localSet(key, cleaned);
     },

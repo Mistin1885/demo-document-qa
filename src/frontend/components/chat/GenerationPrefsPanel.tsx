@@ -32,7 +32,8 @@ export function GenerationPrefsPanel({ prefs, onChange, onReset, disabled = fals
   const isDirty =
     prefs.max_answer_tokens !== undefined ||
     prefs.temperature !== undefined ||
-    prefs.context_window !== undefined;
+    prefs.context_window !== undefined ||
+    prefs.deep_qa_mode === true;
 
   function patch(p: Partial<GenerationOverrides>) {
     onChange({ ...prefs, ...p });
@@ -58,6 +59,22 @@ export function GenerationPrefsPanel({ prefs, onChange, onReset, disabled = fals
 
       {open && (
         <div id="gen-prefs-body" className="grid gap-3 px-4 py-3 text-xs">
+          <label className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2">
+            <input
+              type="checkbox"
+              checked={prefs.deep_qa_mode === true}
+              disabled={disabled}
+              onChange={(e) => patch({ deep_qa_mode: e.target.checked || undefined })}
+              className="mt-0.5 accent-[var(--accent)]"
+            />
+            <span>
+              <span className="block font-medium text-[var(--foreground)]">Deep QA mode</span>
+              <span className="text-[11px] text-[var(--muted)]">
+                Ignore soft LLM budget and include same-session memory for follow-up questions.
+              </span>
+            </span>
+          </label>
+
           {/* max_answer_tokens slider */}
           <label className="flex items-center gap-3">
             <span className="w-32 shrink-0 text-[var(--muted)]">Max output tokens</span>

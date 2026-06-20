@@ -372,9 +372,14 @@ class QAService:
         if budget_manager is not None:
             bm = budget_manager
         elif generation_config is not None and generation_config.context_window is not None:
-            bm = ContextBudgetManager(default_context_window=generation_config.context_window)
+            bm = ContextBudgetManager(
+                default_context_window=generation_config.context_window,
+                ignore_budget=generation_config.deep_qa_mode,
+            )
         else:
-            bm = ContextBudgetManager()
+            bm = ContextBudgetManager(
+                ignore_budget=bool(generation_config and generation_config.deep_qa_mode)
+            )
 
         # Use InMemoryMessageStore in graph — we persist ourselves after
         from app.agent.nodes.persist_messages import InMemoryMessageStore  # noqa: PLC0415
@@ -488,9 +493,14 @@ class QAService:
         if budget_manager is not None:
             bm = budget_manager
         elif generation_config is not None and generation_config.context_window is not None:
-            bm = ContextBudgetManager(default_context_window=generation_config.context_window)
+            bm = ContextBudgetManager(
+                default_context_window=generation_config.context_window,
+                ignore_budget=generation_config.deep_qa_mode,
+            )
         else:
-            bm = ContextBudgetManager()
+            bm = ContextBudgetManager(
+                ignore_budget=bool(generation_config and generation_config.deep_qa_mode)
+            )
 
         from app.agent.nodes.persist_messages import InMemoryMessageStore  # noqa: PLC0415
 

@@ -23,6 +23,8 @@ export interface GenerationOverrides {
   temperature?: number;
   /** Total input budget — resizes the evidence allocation proportionally. */
   context_window?: number;
+  /** Deep QA mode: ignore soft budget and include same-session memory. */
+  deep_qa_mode?: boolean;
 }
 
 export interface AskOptions extends GenerationOverrides {

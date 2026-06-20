@@ -74,6 +74,7 @@ class MessageRequest(BaseModel):
     max_answer_tokens: int | None = Field(default=None, ge=1, le=32_768)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     context_window: int | None = Field(default=None, ge=1_000, le=200_000)
+    deep_qa_mode: bool = False
 
 
 def _generation_config_from_request(body: MessageRequest) -> GenerationConfig:
@@ -82,13 +83,14 @@ def _generation_config_from_request(body: MessageRequest) -> GenerationConfig:
     return GenerationConfig(
         max_answer_tokens=body.max_answer_tokens
         if body.max_answer_tokens is not None
-        else settings.llm_max_tokens,
+        else (32_768 if body.deep_qa_mode else settings.llm_max_tokens),
         temperature=body.temperature
         if body.temperature is not None
         else settings.llm_temperature,
         context_window=body.context_window
         if body.context_window is not None
-        else settings.llm_context_window,
+        else (200_000 if body.deep_qa_mode else settings.llm_context_window),
+        deep_qa_mode=body.deep_qa_mode,
     )
 
 

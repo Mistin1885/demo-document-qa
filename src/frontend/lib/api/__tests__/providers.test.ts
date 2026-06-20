@@ -100,11 +100,11 @@ describe("providers localStorage adapter", () => {
     expect(maskedKey(true)).not.toMatch(/^sk-/);
   });
 
-  it("testConnection returns stub result in local mode", async () => {
+  it("testConnection reports missing local profile without stub fallback", async () => {
     const { testConnection } = await import("../providers");
     const result = await testConnection("any-id");
     expect(result.ok).toBe(false);
-    expect(result.stub).toBe(true);
+    expect(result.stub).toBeUndefined();
     expect(result.error).toBeTruthy();
   });
 });
