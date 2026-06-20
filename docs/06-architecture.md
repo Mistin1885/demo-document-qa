@@ -99,6 +99,7 @@ process; the four outbound arrows are the only out-of-process dependencies.
    │ inspect_document│         │              │        │ generate_answer │
    │ fetch_structural│         │              │        │ aggregate_sources│
    │ query_facts     │         │              │        │ verify_claims    │
+   │ grep_chunks     │         │              │        │ llm_replan       │
    │ expand_evidence │         │              │        │                  │
    └─────────────────┘         └──────────────┘        └──────────────────┘
 ```
@@ -116,6 +117,15 @@ Three rules colour everything in this diagram:
 3. **`RetrievalService.search` is the only public surface to Vespa.** Both
    `search_hybrid` (agent tool) and any future call paths must go through it
    so the chat-isolation guard cannot be skipped.
+
+The `llm_replan` node sits inside the right-hand "Chat provider" lane:
+it is the only place where the LLM authors structured retrieval intent.
+Its output is a Pydantic-validated `ReplanDecision`, gated by policy P15
+to a whitelist of retrieval tools, and dispatched through the same
+`execute_retrieval_tools → PolicyEngine → RetrievalService` path —
+never directly. See [`08-deep-qa.md`](./08-deep-qa.md) for how this
+interacts with Deep QA mode (which only widens budgets / retrieval, never
+weakens isolation).
 
 ---
 

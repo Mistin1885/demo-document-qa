@@ -51,16 +51,25 @@ Accept: text/event-stream
 Content-Type: application/json
 
 {
-  "content": "Compare LightRAG and GraphRAG on accuracy.",
+  "question": "Compare LightRAG and GraphRAG on accuracy.",
   "max_answer_tokens": null,
   "temperature": null,
-  "context_window": null
+  "context_window": null,
+  "deep_qa_mode": false,
+  "selected_document_ids": null
 }
 ```
 
-The request body is `MessageRequest` (`src/app/api/messages.py:57+`). Per-
+The request body is `MessageRequest` (`src/app/api/messages.py:56+`). Per-
 request generation overrides are optional; when absent the chat's default
 provider profile (or the env-level `LLM_*` fallback) decides.
+`deep_qa_mode=true` bumps the per-request defaults to
+`max_answer_tokens=32_768` / `context_window=200_000` and flips
+`ContextBudgetManager.ignore_budget` on (see
+[`08-deep-qa.md`](./08-deep-qa.md)). `selected_document_ids` is only
+honoured on the **first** message of a session — after that the backend
+has already called `session_service.lock_document_scope_for_qa` and
+subsequent requests cannot widen scope.
 
 ### 2.2 API layer
 
@@ -99,7 +108,7 @@ Router: `src/app/api/messages.py:239-298`. Responsibilities, in order:
 
 What it does *after* the agent: see §2.7.
 
-### 2.4 The graph executes (15 nodes)
+### 2.4 The graph executes (16 nodes)
 
 The full node list and conditional edges live in
 [`docs/05-agent-workflow.md` §1](./05-agent-workflow.md#1-stategraph-nodes).
@@ -109,23 +118,25 @@ Here is what each node does *in terms of which subsystems it touches*:
 |---|---|---|
 | 1 | `load_chat_and_session` | Postgres (chats, sessions, messages) |
 | 2 | `inspect_scope` | Postgres (chat manifest snapshot) via `inspect_chat` tool |
-| 3 | `plan_information_needs` | **LLM** (chat provider) — first call |
+| 3 | `plan_information_needs` | deterministic Python (keyword routing; LLM history-prepend on Deep QA) |
 | 4 | `enforce_scope_and_policies` | pure Python (P1–P4) |
-| 5 | `execute_retrieval_tools` | Postgres + Vespa via tools |
+| 5 | `execute_retrieval_tools` | Postgres + Vespa via tools (widened in Deep QA) |
 | 6 | `merge_evidence_workspace` | pure Python (dedup, score normalisation) |
-| 7 | `check_context_budget` | tiktoken / heuristic (`ContextBudgetManager`) |
-| 8 | `aggregate_sources_node` | **LLM** — only on overflow (P6) |
-| 9 | `check_coverage` | pure Python; may loop |
-| 10 | `plan_gap_retrieval` | **LLM** — only when coverage incomplete |
-| 11 | `verify_critical_claims` | Postgres (`structured_facts`) + numeric cross-check (P8) |
-| 12 | `generate_answer` | **LLM** — final answer |
-| 13 | `validate_citations` | pure Python (P12 / P13) |
-| 14 | `validate_scope_isolation` | pure Python; last guard |
-| 15 | `persist_messages` | Postgres (insert user + assistant `messages`) |
+| 7 | `check_context_budget` | tiktoken / heuristic (`ContextBudgetManager`); short-circuits in Deep QA |
+| 8 | `aggregate_sources_node` | **LLM** — only on overflow (P6); never fires in Deep QA |
+| 9 | `check_coverage` | pure Python; routes to gap retrieval, llm_replan, or onwards |
+| 10 | `plan_gap_retrieval` | deterministic Python; targeted second pass |
+| 11 | `llm_replan` | **LLM** — bounded JSON-only replan decision; capped at `MAX_REPLAN_ROUNDS=3`; gated by P15 |
+| 12 | `verify_critical_claims` | Postgres (`structured_facts`) + numeric cross-check (P8) |
+| 13 | `generate_answer` | **LLM** — final answer (Deep QA prepends session memory) |
+| 14 | `validate_citations` | pure Python (P12 / P13) |
+| 15 | `validate_scope_isolation` | pure Python; last guard |
+| 16 | `persist_messages` | Postgres (insert user + assistant `messages`) |
 
-Three LLM calls is the common case. Adding `aggregate_sources` and/or a gap
-pass pushes it to four or five. Policy P9 caps the tool-call iteration count
-at 2 — there is no unbounded ReAct loop.
+Two LLM calls is the common case (replan/aggregate/gap-pass are
+conditional). Policy P9 caps the deterministic tool-call iterations at 2;
+`MAX_REPLAN_ROUNDS=3` caps the bounded LLM-driven path. There is no
+unbounded ReAct loop.
 
 ### 2.5 What gets called by tools
 
@@ -135,6 +146,7 @@ at 2 — there is no unbounded ReAct loop.
 | `inspect_document` | `document_service.get_manifest(chat_id, document_id)` | per-doc page count, sections, has-table/figure |
 | `fetch_structural_nodes` | `document_service.fetch_nodes(...)` with the restricted filter | `list[NodeRecord]` in reading order |
 | `search_hybrid` | **`RetrievalService.search(RetrievalRequest(...))`** | `list[SearchHit]` with full score breakdown |
+| `grep_document_chunks` | `document_node`-scoped Python scan (lexical + label / formula scoring + neighbour expansion) | `list[EvidenceItem]` with chunk-level provenance |
 | `query_structured_facts` | `facts_service.query(FactsFilter(...))` | `list[StructuredFact]` |
 | `aggregate_sources` | chat provider chat call with built-in template | `list[EvidenceItem]` (compacted) |
 | `expand_evidence` | `document_service.fetch_siblings(...)` | additional `EvidenceItem`s |
@@ -259,6 +271,7 @@ External
 | Citation outside chat scope | P12 / P13 / `validate_scope_isolation` | citation silently dropped; the answer remains coherent |
 | Tool overflow | P6 | `aggregate_sources_node` compacts evidence and the graph continues |
 | Iteration cap reached | P9 → P7 fallback | "not enough information" answer |
+| `llm_replan` returned malformed JSON / bad tool | P15 + `_fallback` in `llm_replan` | replan round is recorded with `LLM_REPLAN_FALLBACK`, loop exits early, the answer is generated from existing evidence |
 
 All failures are recorded in `AgentDebugTrace` and persisted alongside the
 assistant message as `tool_trace`, so a follow-up question can inspect the
@@ -288,3 +301,7 @@ open http://localhost:3000
 
 Then: **New chat → Upload PDF → wait for `indexed` → ask a question.** The
 full ingestion + QA chain described in this document fires on every send.
+For long synthesis questions or session follow-ups, expand the
+**⚙ Advanced** panel and tick **Deep QA mode** —
+[`docs/08-deep-qa.md`](./08-deep-qa.md) explains exactly which steps in
+the pipeline above behave differently when that flag is on.

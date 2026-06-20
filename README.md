@@ -7,6 +7,15 @@ A NotebookLM-like multi-document Agentic QA system targeting arXiv research pape
 > Live progress + decisions: [`PROGRESS.md`](PROGRESS.md) (zh-Hant).
 > Original spec: [`GUIDE.md`](GUIDE.md).
 > Final delivery report: [`artifacts/final-report.md`](artifacts/final-report.md).
+> Subsystem docs (English):
+> [`docs/01-mineru-setup.md`](docs/01-mineru-setup.md) ·
+> [`docs/02-mineru-output-customizations.md`](docs/02-mineru-output-customizations.md) ·
+> [`docs/03-postgresql-schema.md`](docs/03-postgresql-schema.md) ·
+> [`docs/04-vespa-schema.md`](docs/04-vespa-schema.md) ·
+> [`docs/05-agent-workflow.md`](docs/05-agent-workflow.md) ·
+> [`docs/06-architecture.md`](docs/06-architecture.md) ·
+> [`docs/07-qa-pipeline.md`](docs/07-qa-pipeline.md) ·
+> [`docs/08-deep-qa.md`](docs/08-deep-qa.md).
 
 ---
 
@@ -15,8 +24,22 @@ A NotebookLM-like multi-document Agentic QA system targeting arXiv research pape
 - **Multi-Chat isolation**: every document, retrieval, citation and SQL query is bound to `chat_id`. Cross-chat reads are rejected at four independent layers (DB, Vespa filter, API scope, service layer).
 - **MinerU hybrid parsing**: arXiv PDFs flow through MinerU's VLM (running on a local vLLM at `http://localhost:8001`) producing reliable markdown + a structured `middle.json`; the post-processor renames image crops and adds page anchors.
 - **Vespa hybrid retrieval**: BM25 + HNSW ANN candidates → RRF fusion → optional Vespa native or cross-encoder reranker. Every query forcibly injects `chat_id`.
-- **LangGraph StateGraph**: explicit 15-node graph, 7 tools, 14 code-enforced policies; tool `chat_id` is **always** injected from `AgentState`, never from the LLM.
+- **LangGraph StateGraph**: explicit 16-node graph (incl. bounded `llm_replan`), 8 tools (incl. deterministic `grep_document_chunks`), 15 code-enforced policies; tool `chat_id` is **always** injected from `AgentState`, never from the LLM.
+- **Deep QA mode**: per-message opt-in that widens retrieval (`preset=broad`, top_k=20, larger grep window), bumps the default answer budget to 32 768 / context window to 200 000, ignores the soft `aggregate_sources` overflow path, and injects same-session memory into the answer prompt — without weakening chat isolation. See [`docs/08-deep-qa.md`](docs/08-deep-qa.md).
+- **Per-session document scope**: a chat can hold many PDFs but a session can pin a subset on its first message; the backend then locks `selected_document_ids` so subsequent turns never silently widen scope.
 - **Goal coverage score: 100/100** with every mandatory gate passing — see `artifacts/evaluation/goal-score.md`.
+
+### Demo screenshots
+
+Normal mode — single-turn citations over an arXiv PDF:
+
+![Normal QA — turn 1](docs/images/q1.png)
+![Normal QA — turn 2](docs/images/q2.png)
+![Normal QA — turn 3](docs/images/q3.png)
+
+Deep QA mode — multi-turn follow-up where the agent resolves "前一個問題的方法" against same-session memory (see [`docs/08-deep-qa.md`](docs/08-deep-qa.md)):
+
+![Deep QA mode — session memory follow-up](docs/images/deep-q1.png)
 
 ---
 
@@ -150,7 +173,9 @@ When all four services are healthy:
 | `EMBEDDING_DIM` | Vespa native E5 tensor dimension. Keep at `384` unless you also change the Vespa embedder model/schema. | `384` |
 | `LLM_PROVIDER` | `mock` / `openai_compatible` / `openai` / `gemini_native`. | `mock` |
 | `LLM_API_URL` / `LLM_MODEL` / `LLM_API_KEY` | Env-level fallback LLM used when a chat has no `default_chat_profile`. | empty |
-| `LLM_CONTEXT_WINDOW` | Context budget in tokens. | `10000` |
+| `LLM_CONTEXT_WINDOW` | Context budget in tokens (Deep QA mode bumps the per-request default to 200 000). | `10000` |
+| `LLM_MAX_TOKENS` | Default cap on the answer's output tokens (Deep QA mode bumps the per-request default to 32 768). | `2048` |
+| `LLM_TEMPERATURE` | Default sampling temperature. | `0.0` |
 | `NEXT_PUBLIC_API_BASE_URL` | Optional build-time absolute backend URL. Empty means the browser uses the frontend `/api/proxy` route. | empty |
 | `CORS_EXTRA_ORIGINS` | Comma-separated extra browser origins the backend will accept. | `http://localhost:3010,http://127.0.0.1:3010` |
 
@@ -192,6 +217,11 @@ Once the stack is up and the Vespa schema deployed:
 5. When ingestion shows "ready", open the **Chat** pane and ask a question.
    The LangGraph agent will retrieve only over this chat's documents and
    stream the answer over SSE, with citations back to the source pages.
+6. For long synthesis questions or session follow-ups, expand
+   **⚙ Advanced** under the chat input and tick **Deep QA mode** before
+   sending — the agent will widen retrieval, ignore the soft budget, and
+   prepend recent same-session turns to the answer prompt. Full
+   behaviour: [`docs/08-deep-qa.md`](docs/08-deep-qa.md).
 
 #### Stop / reset
 
@@ -248,7 +278,7 @@ Four layers — none may be skipped:
 3. **API scope** — route layer verifies session/document ownership via `session_service` / `document_service`; cross-chat URLs return 404.
 4. **Agent layer** — `chat_id` lives in `AgentState` and is propagated to tools by the service layer; tool parameter schemas use `extra="forbid"` and do **not** include `chat_id`, so the LLM cannot inject it.
 
-Citations are checked twice: `PolicyEngine.enforce_citations` drops drafts whose `chat_id != state.chat_id` (policy 12) and whose `document_id` is not in the `ChatDocument` association (policy 13).
+Citations are checked twice: `PolicyEngine.enforce_citations` drops drafts whose `chat_id != state.chat_id` (policy 12) and whose `document_id` is not in the `ChatDocument` association (policy 13). The bounded LLM replan path (`llm_replan` node) is fenced by policy 15 — the LLM can only nominate whitelisted retrieval tools and never sees `chat_id` in its schema.
 
 ---
 
