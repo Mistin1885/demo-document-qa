@@ -1,0 +1,335 @@
+{
+  "paper": "2410.05779v3",
+  "description": "20-question LightRAG QA benchmark generated from PDF content; every case must pass with deep_qa_mode on and off.",
+  "cases": [
+    {
+      "id": "q01_summary",
+      "type": "summary",
+      "question": "Summarize the LightRAG paper in 5 bullet points.",
+      "must": [
+        "graph",
+        "dual-level",
+        "incremental",
+        "evaluation"
+      ],
+      "evidence": [
+        "LightRAG is a simple and fast retrieval-augmented generation framework that incorporates graph structures into text indexing and retrieval.",
+        "It uses dual-level retrieval over low-level entity details and high-level themes to answer detailed and abstract queries.",
+        "LightRAG supports incremental updates by integrating newly extracted entities and relationships into the existing graph without rebuilding the whole index.",
+        "The evaluation covers retrieval accuracy, model ablation, response efficiency, and adaptability to data changes."
+      ]
+    },
+    {
+      "id": "q02_compare_graphrag",
+      "type": "comparison",
+      "question": "Compare LightRAG with GraphRAG.",
+      "must": [
+        "GraphRAG",
+        "LightRAG",
+        "community",
+        "low-level",
+        "high-level"
+      ],
+      "evidence": [
+        "GraphRAG is a graph-enhanced RAG system that uses an LLM to generate community reports to capture global information for high-level queries.",
+        "LightRAG uses graph-based text indexing plus low-level and high-level retrieval, combining specific entity exploration with broader topic retrieval.",
+        "While both LightRAG and GraphRAG use graph-based retrieval mechanisms, LightRAG consistently outperforms GraphRAG, particularly in larger datasets with complex language contexts.",
+        "In retrieval cost, GraphRAG traverses hundreds of communities, whereas LightRAG uses fewer than 100 tokens for keyword generation and retrieval and requires one API call."
+      ]
+    },
+    {
+      "id": "q03_ablation_performance",
+      "type": "performance",
+      "question": "Performance of ablated versions of LightRAG. Please include a comparison table.",
+      "must": [
+        "-High",
+        "-Low",
+        "-Origin",
+        "Table 2"
+      ],
+      "requires_table": true,
+      "evidence": [
+        "Table 2: Performance of ablated versions of LightRAG, using NaiveRAG as reference. | Variant | Key interpretation | Example LightRAG-side results | | Full LightRAG | hybrid low-level and high-level retrieval | Agriculture Overall 67.6%, Legal Overall 84.8% | | -High | removes high-order retrieval | Agriculture Overall 64.8%, Legal Overall 78.0% | | -Low | removes low-level retrieval | Agriculture Overall 65.2%, Legal Overall 81.2% | | -Origin | removes original text | Agriculture Overall 74.4%, Legal Overall 84.4% |",
+        "The -High variant removes high-order retrieval and leads to performance decline across nearly all datasets and metrics.",
+        "The -Low variant uses high-level retrieval and can improve comprehensiveness, but may lose depth for precise detailed answers.",
+        "The full LightRAG hybrid mode combines low-level and high-level retrieval and achieves balanced performance across multiple dimensions."
+      ]
+    },
+    {
+      "id": "q04_table1_graphrag_winrates",
+      "type": "table",
+      "question": "Reproduce the Table 1 GraphRAG vs LightRAG win rates for Legal and Mix as a comparison table.",
+      "must": [
+        "Legal",
+        "Mix",
+        "GraphRAG",
+        "LightRAG"
+      ],
+      "requires_table": true,
+      "evidence": [
+        "Table 1 GraphRAG vs LightRAG win rates. | Dataset | Metric | GraphRAG | LightRAG | | Legal | Comprehensiveness | 48.4% | 51.6% | | Legal | Diversity | 26.4% | 73.6% | | Legal | Empowerment | 43.6% | 56.4% | | Legal | Overall | 47.2% | 52.8% | | Mix | Comprehensiveness | 50.4% | 49.6% | | Mix | Diversity | 36.0% | 64.0% | | Mix | Empowerment | 50.8% | 49.2% | | Mix | Overall | 50.4% | 49.6% |"
+      ]
+    },
+    {
+      "id": "q05_figure1_architecture",
+      "type": "figure",
+      "question": "What does Figure 1 show about the LightRAG architecture?",
+      "must": [
+        "Figure 1",
+        "architecture",
+        "graph",
+        "retrieval"
+      ],
+      "evidence": [
+        "Figure 1: Overall architecture of the proposed LightRAG framework.",
+        "The architecture extracts entities and relationships, builds a graph-based text index, and uses low-level and high-level key-value retrieval for answer generation."
+      ]
+    },
+    {
+      "id": "q06_figure2_cost",
+      "type": "figure",
+      "question": "Explain Figure 2 and the cost comparison between GraphRAG and LightRAG.",
+      "must": [
+        "Figure 2",
+        "610",
+        "1,000",
+        "100",
+        "API"
+      ],
+      "evidence": [
+        "Figure 2 compares cost in terms of total tokens and API calls for GraphRAG and LightRAG on the Legal dataset.",
+        "In retrieval, GraphRAG uses 610 level-2 community reports, each averaging 1,000 tokens, totaling 610,000 tokens.",
+        "LightRAG uses fewer than 100 tokens for keyword generation and retrieval and requires only a single API call."
+      ]
+    },
+    {
+      "id": "q07_retrieval_formula",
+      "type": "formula",
+      "question": "What is the formula-like cost expression for GraphRAG incremental update, and what does it mean?",
+      "must": [
+        "1,399",
+        "2",
+        "5,000",
+        "communities"
+      ],
+      "evidence": [
+        "For incremental updates, GraphRAG would require around 1,399 × 2 × 5,000 tokens to reconstruct both original and new community reports.",
+        "The expression uses 1,399 communities, two sets of community reports, and roughly 5,000 tokens per community report, showing high update cost."
+      ]
+    },
+    {
+      "id": "q08_low_high_retrieval",
+      "type": "method",
+      "question": "What is the difference between low-level and high-level retrieval in LightRAG?",
+      "must": [
+        "low-level",
+        "high-level",
+        "entities",
+        "broader topics"
+      ],
+      "evidence": [
+        "Low-level retrieval focuses on specific entities and their immediate neighbors for detailed information.",
+        "High-level retrieval captures broader topics and entity-wise relationships to gather more extensive and varied information.",
+        "LightRAG combines low-level and high-level retrieval in hybrid mode to provide both breadth and depth."
+      ]
+    },
+    {
+      "id": "q09_rq_questions",
+      "type": "overview",
+      "question": "List the four research questions RQ1 to RQ4 in the evaluation section.",
+      "must": [
+        "RQ1",
+        "RQ2",
+        "RQ3",
+        "RQ4"
+      ],
+      "evidence": [
+        "RQ1 asks how LightRAG compares to existing RAG baseline methods in generation performance.",
+        "RQ2 asks how dual-level retrieval and graph-based indexing enhance generation quality.",
+        "RQ3 asks what advantages LightRAG demonstrates through case examples.",
+        "RQ4 asks about the costs associated with LightRAG and its adaptability to data changes."
+      ]
+    },
+    {
+      "id": "q10_baselines",
+      "type": "overview",
+      "question": "Which baselines are compared against LightRAG, and where does GraphRAG fit?",
+      "must": [
+        "NaiveRAG",
+        "RQ-RAG",
+        "HyDE",
+        "GraphRAG"
+      ],
+      "evidence": [
+        "The baselines include NaiveRAG, RQ-RAG, HyDE, and GraphRAG.",
+        "GraphRAG is described as a graph-enhanced RAG system that uses an LLM to generate community reports for global information."
+      ]
+    },
+    {
+      "id": "q11_table3_case_study",
+      "type": "table",
+      "question": "What does Table 3 show in the case study comparing GraphRAG and LightRAG?",
+      "must": [
+        "Table 3",
+        "Answer 2",
+        "LightRAG",
+        "comprehensiveness"
+      ],
+      "evidence": [
+        "Table 3: Case Study: Comparison Between LightRAG and the Baseline Method GraphRAG.",
+        "The query asks which methods can normalize feature values for effective machine learning.",
+        "The LLM judge selects Answer 2 (LightRAG) for comprehensiveness, diversity, empowerment, and overall winner.",
+        "LightRAG covers a broader array of metrics including MAPK, AUC, user engagement metrics, precision, recall, RMSE, and F-Measure."
+      ]
+    },
+    {
+      "id": "q12_legal_dataset",
+      "type": "performance",
+      "question": "Why is the Legal dataset important in the paper's comparison?",
+      "must": [
+        "Legal",
+        "large",
+        "GraphRAG",
+        "LightRAG"
+      ],
+      "evidence": [
+        "The Legal dataset is the largest dataset and contains millions of tokens.",
+        "The paper states that LightRAG's advantage over GraphRAG is particularly clear in larger datasets with complex language contexts such as Legal.",
+        "For Legal diversity in Table 1, GraphRAG has 26.4% while LightRAG has 73.6%."
+      ]
+    },
+    {
+      "id": "q13_incremental_updates",
+      "type": "method",
+      "question": "How does LightRAG handle incremental updates compared with GraphRAG?",
+      "must": [
+        "dynamic updates",
+        "reconstruction",
+        "existing graph",
+        "GraphRAG"
+      ],
+      "evidence": [
+        "LightRAG integrates newly extracted entities and relationships into the existing graph without full reconstruction.",
+        "GraphRAG must dismantle its existing community structure and regenerate community reports when new data is added.",
+        "This makes LightRAG more efficient and cost-effective for dynamic updates."
+      ]
+    },
+    {
+      "id": "q14_compare_table_methods",
+      "type": "comparison",
+      "question": "Create a comparison table of LightRAG, GraphRAG, and NaiveRAG based on retrieval strategy and cost.",
+      "must": [
+        "LightRAG",
+        "GraphRAG",
+        "NaiveRAG",
+        "retrieval"
+      ],
+      "requires_table": true,
+      "evidence": [
+        "| Method | Retrieval strategy | Cost / limitation | | LightRAG | graph-based text index with low-level and high-level retrieval | fewer than 100 retrieval tokens and one API call in Legal retrieval | | GraphRAG | community reports and graph-enhanced retrieval | 610,000 retrieval tokens and many API calls on Legal | | NaiveRAG | top-k chunk retrieval baseline | lacks relational graph structure and loses on large corpora |"
+      ]
+    },
+    {
+      "id": "q15_table2_best_variant",
+      "type": "performance",
+      "question": "From Table 2, which ablated or full variant performs best on Legal Overall, and what are the numbers?",
+      "must": [
+        "Legal",
+        "Overall",
+        "84.8",
+        "LightRAG"
+      ],
+      "evidence": [
+        "Table 2 Legal Overall results: Full LightRAG 84.8%, -High 78.0%, -Low 81.2%, and -Origin 84.4%.",
+        "Thus the full LightRAG variant is the best on Legal Overall, narrowly ahead of -Origin."
+      ]
+    },
+    {
+      "id": "q16_diversity_metric",
+      "type": "performance",
+      "question": "What does the paper say about LightRAG's diversity advantage?",
+      "must": [
+        "Diversity",
+        "Legal",
+        "dual-level",
+        "73.6"
+      ],
+      "evidence": [
+        "LightRAG demonstrates a significant advantage in the Diversity metric, particularly within the larger Legal dataset.",
+        "In Table 1 GraphRAG versus LightRAG on Legal Diversity, GraphRAG is 26.4% and LightRAG is 73.6%.",
+        "The paper attributes this to the dual-level retrieval paradigm that retrieves from both low-level and high-level dimensions."
+      ]
+    },
+    {
+      "id": "q17_graph_indexing",
+      "type": "method",
+      "question": "Why does graph-based text indexing help LightRAG?",
+      "must": [
+        "entities",
+        "relationships",
+        "global",
+        "multi-hop"
+      ],
+      "evidence": [
+        "Graph-based text indexing extracts entities and relationships from chunks and builds graph structures.",
+        "The constructed graph structures enable extraction of global information from multi-hop subgraphs.",
+        "This enhances LightRAG's ability to handle complex queries spanning multiple document chunks."
+      ]
+    },
+    {
+      "id": "q18_table1_naiverag",
+      "type": "table",
+      "question": "Reproduce a compact comparison table for NaiveRAG versus LightRAG on Agriculture Overall and Legal Overall.",
+      "must": [
+        "NaiveRAG",
+        "Agriculture",
+        "Legal",
+        "84.8"
+      ],
+      "requires_table": true,
+      "evidence": [
+        "| Dataset | Metric | NaiveRAG | LightRAG | | Agriculture | Overall | 32.4% | 67.6% | | Legal | Overall | 15.2% | 84.8% |"
+      ]
+    },
+    {
+      "id": "q19_followup_best",
+      "type": "follow_up",
+      "question": "結果來看哪個比較好？",
+      "history": [
+        {
+          "role": "user",
+          "content": "比較這篇 document 不同方法的 performance."
+        },
+        {
+          "role": "assistant",
+          "content": "The methods compared include LightRAG, GraphRAG, NaiveRAG and ablated LightRAG variants."
+        }
+      ],
+      "must": [
+        "LightRAG",
+        "best",
+        "GraphRAG"
+      ],
+      "evidence": [
+        "Across Table 1 and the case study, LightRAG generally performs best, outperforming GraphRAG especially on larger datasets and diversity metrics.",
+        "For Legal Diversity, GraphRAG is 26.4% while LightRAG is 73.6%; Table 3 also selects LightRAG as the overall winner over GraphRAG."
+      ]
+    },
+    {
+      "id": "q20_limitations_cost_tradeoff",
+      "type": "analysis",
+      "question": "What trade-offs or limitations are implied by the ablation and cost analyses?",
+      "must": [
+        "trade-off",
+        "low-level",
+        "high-level",
+        "cost"
+      ],
+      "evidence": [
+        "The -High and -Low ablations show a trade-off between detailed entity exploration and broader topic coverage.",
+        "Low-level-only retrieval can be too narrow for complex comprehensive queries, while high-level-only retrieval can lose depth for precise detailed answers.",
+        "The cost analysis implies GraphRAG has high retrieval and update overhead, while LightRAG reduces retrieval cost with compact keyword generation and incremental graph updates."
+      ]
+    }
+  ]
+}

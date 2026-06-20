@@ -82,7 +82,7 @@ def test_planner_numeric_routing() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. plan_information_needs — summary → inspect_chat + fetch_structural_nodes
+# 3. plan_information_needs — summary → structural tools plus broad evidence search
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +93,7 @@ async def test_plan_summary_chosen_tools() -> None:
     tools = result["plan"].chosen_tools
     assert "inspect_chat" in tools
     assert "fetch_structural_nodes" in tools
-    assert "search_hybrid" not in tools
+    assert "search_hybrid" in tools
 
 
 # ---------------------------------------------------------------------------

@@ -204,28 +204,22 @@ async def test_duplicate_tool_call_not_repeated() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Summary question: search_hybrid NOT called (fetch-all path)
+# 6. Summary question: structural fetch-all remains present with broad search
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_summary_question_initial_plan_no_search_hybrid() -> None:
-    """For summary questions the initial plan must NOT include search_hybrid.
-
-    The planner uses a fetch-all structural path (inspect_chat +
-    fetch_structural_nodes) instead of top-k hybrid retrieval per
-    CLAUDE.md §6.5.  Gap retrieval may add search_hybrid as a fallback
-    when structural fetches fail (e.g. no real DB), but the INITIAL plan
-    must not contain search_hybrid.
-    """
+async def test_summary_question_initial_plan_includes_structural_and_search() -> None:
+    """Summary questions must keep structural fetch-all and add broad evidence search."""
     from app.agent.nodes.plan_information_needs import plan_information_needs  # noqa: PLC0415
 
     state = _base_state(question="Give me a summary overview of this paper")
     result = await plan_information_needs(state)
     plan = result["plan"]
 
-    assert "search_hybrid" not in plan.chosen_tools
-    assert "inspect_chat" in plan.chosen_tools or "fetch_structural_nodes" in plan.chosen_tools
+    assert "search_hybrid" in plan.chosen_tools
+    assert "inspect_chat" in plan.chosen_tools
+    assert "fetch_structural_nodes" in plan.chosen_tools
 
 
 # ---------------------------------------------------------------------------

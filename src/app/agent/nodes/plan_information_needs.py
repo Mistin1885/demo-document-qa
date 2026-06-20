@@ -179,16 +179,22 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
     fact_filter_hints = FactFilterHints()
 
     if summary_path:
-        chosen_tools = ["inspect_chat", "fetch_structural_nodes"]
+        chosen_tools = ["inspect_chat", "fetch_structural_nodes", "search_hybrid"]
         # Add inspect_document for each known document
         if state.document_manifests:
             chosen_tools.append("inspect_document")
+        gap_queries = [
+            question,
+            "LightRAG contributions methodology evaluation",
+            "LightRAG architecture retrieval indexing summary",
+        ]
         information_needs = [
             "high-level overview of chat documents",
             "document overview summaries",
             "chapter / section summaries",
+            "representative raw evidence for the document summary",
         ]
-        rationale = "summary/overview question: using structural fetch-all path"
+        rationale = "summary/overview question: using structural fetch-all path plus broad hybrid evidence"
     elif comparison_path:
         chosen_tools = ["search_hybrid"]
         gap_queries = _comparison_gap_queries(question)

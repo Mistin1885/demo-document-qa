@@ -166,17 +166,43 @@ def _extract_evidence(prompt: str) -> tuple[str, list[_EvidenceExcerpt]]:
 
 
 def _build_extractive_answer(prompt: str, *, max_chars: int) -> str:
-    _question, excerpts = _extract_evidence(prompt)
+    question, excerpts = _extract_evidence(prompt)
     if not excerpts:
         return "There is not enough information in the current chat's documents to answer this question."
 
     ranked = sorted(excerpts, key=lambda ev: (ev.score, -int(ev.marker[1:])), reverse=True)
-    selected = [ev for ev in ranked if ev.score > 0][:3] or ranked[:2]
+    q_lower = question.lower()
+    wants_broad_answer = any(
+        marker in q_lower
+        for marker in (
+            "summarize",
+            "summary",
+            "compare",
+            "comparison table",
+            "reproduce",
+            "list",
+            "why",
+            "how",
+            "explain",
+            "limitation",
+            "trade-off",
+            "tradeoff",
+            "比較",
+            "表格",
+        )
+    )
+    max_items = 6 if wants_broad_answer else 3
+    if wants_broad_answer:
+        selected = ranked[:max_items]
+    else:
+        selected = [ev for ev in ranked if ev.score > 0][:max_items] or ranked[: min(3, max_items)]
 
     parts = ["Based on the retrieved document excerpts:"]
     budget_left = max_chars - len(parts[0])
     for ev in selected:
-        snippet = _compact_excerpt(ev.content, max_chars=min(360, max(160, budget_left // 2)))
+        table_like = "|" in ev.content or "table" in ev.content.lower()
+        excerpt_cap = 1_200 if table_like else 360
+        snippet = _compact_excerpt(ev.content, max_chars=min(excerpt_cap, max(160, budget_left // 2)))
         sentence = f"- {snippet} [{ev.marker}]"
         if len(sentence) > budget_left and len(parts) > 1:
             break
