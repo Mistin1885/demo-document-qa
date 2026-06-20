@@ -339,6 +339,38 @@ class PolicyEngine:
         return False
 
     # ------------------------------------------------------------------
+    # enforce_replan_decision — policy 15
+    # ------------------------------------------------------------------
+
+    def enforce_replan_decision(self, state: AgentState, decision: Any) -> None:
+        """Policy 15: LLM replan may only nominate whitelisted retrieval tools.
+
+        The decision object is already Pydantic-validated by ``llm_replan``;
+        this policy adds a second explicit guard at the dispatch boundary.
+        """
+        allowed = {
+            "search_hybrid",
+            "fetch_structural_nodes",
+            "query_structured_facts",
+            "inspect_document",
+        }
+        for tool_call in getattr(decision, "tool_calls", []):
+            tool = getattr(tool_call, "tool", None)
+            if tool not in allowed:
+                detail = f"llm_replan nominated forbidden tool: {tool!r}"
+                state.record_error(code="REPLAN_FORBIDDEN_TOOL", detail=detail)
+                state.record_event(
+                    "policy_violation",
+                    "policy_15_replan_decision",
+                    tool=tool,
+                )
+                raise PolicyViolation(
+                    code="REPLAN_FORBIDDEN_TOOL",
+                    detail=detail,
+                    policy_id=15,
+                )
+
+    # ------------------------------------------------------------------
     # Private policy implementations
     # ------------------------------------------------------------------
 

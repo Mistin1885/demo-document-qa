@@ -18,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.state import AgentState, ConversationTurn, EvidenceItem, ToolCallRecord
 
+MAX_REPLAN_ROUNDS = 3
+COVERAGE_SIMILARITY_THRESHOLD = 0.55
+
 
 @runtime_checkable
 class _TiktokenEncoder(Protocol):
@@ -129,8 +132,11 @@ class ContextBudgetManager:
         self,
         default_context_window: int = 10_000,
         allocation: ContextAllocation | None = None,
+        *,
+        ignore_budget: bool = False,
     ) -> None:
         self.default_context_window = default_context_window
+        self.ignore_budget = ignore_budget
         if allocation is None:
             self.allocation = ContextAllocation.scaled_to(default_context_window)
         else:
@@ -212,6 +218,8 @@ class ContextBudgetManager:
             evidence_tokens + history_tokens + plan_tokens
             > context_window − answer_reserve
         """
+        if self.ignore_budget:
+            return False
         evidence_tokens = sum(self.count_tokens(ev.content) for ev in state.evidence_items)
         history_tokens = self.estimate_conversation(state.conversation_history)
         plan_tokens = (
@@ -301,4 +309,9 @@ def _load_tiktoken() -> _TiktokenEncoder | None:
         return None
 
 
-__all__ = ["ContextAllocation", "ContextBudgetManager"]
+__all__ = [
+    "COVERAGE_SIMILARITY_THRESHOLD",
+    "MAX_REPLAN_ROUNDS",
+    "ContextAllocation",
+    "ContextBudgetManager",
+]

@@ -29,7 +29,7 @@ from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.agent.budget import ContextBudgetManager
+from app.agent.budget import MAX_REPLAN_ROUNDS, ContextBudgetManager
 from app.agent.nodes.aggregate_sources_node import aggregate_sources_node
 from app.agent.nodes.check_context_budget import check_context_budget, is_overflow
 from app.agent.nodes.check_coverage import check_coverage
@@ -37,6 +37,7 @@ from app.agent.nodes.enforce_scope_and_policies import enforce_scope_and_policie
 from app.agent.nodes.execute_retrieval_tools import execute_retrieval_tools
 from app.agent.nodes.generate_answer import generate_answer
 from app.agent.nodes.inspect_scope import inspect_scope
+from app.agent.nodes.llm_replan import llm_replan
 from app.agent.nodes.load_chat_and_session import load_chat_and_session
 from app.agent.nodes.merge_evidence_workspace import merge_evidence_workspace
 from app.agent.nodes.persist_messages import InMemoryMessageStore, MessageStore, persist_messages
@@ -165,6 +166,11 @@ def build_graph(
         updates = await plan_gap_retrieval(state, deps)
         return _wrap(state, updates)
 
+    async def _node_llm_replan(container: StateContainer) -> dict[str, Any]:
+        state = _load(container)
+        updates = await llm_replan(state, chat_provider)
+        return _wrap(state, updates)
+
     async def _node_verify(container: StateContainer) -> dict[str, Any]:
         state = _load(container)
         updates = await verify_critical_claims(state)
@@ -202,10 +208,19 @@ def build_graph(
 
     def _route_coverage(
         container: StateContainer,
-    ) -> Literal["plan_gap_retrieval", "verify_critical_claims"]:
+    ) -> Literal["plan_gap_retrieval", "llm_replan", "verify_critical_claims"]:
         state = _load(container)
+        has_unsatisfied = any(not r.satisfied for r in state.coverage_requirements)
         if state.coverage_state == "incomplete" and state.iteration_count < 2:
             return "plan_gap_retrieval"
+        max_replan_rounds = (
+            state.generation_config.max_replan_rounds
+            if state.generation_config.max_replan_rounds is not None
+            else MAX_REPLAN_ROUNDS
+        )
+        max_replan_rounds = min(max_replan_rounds, MAX_REPLAN_ROUNDS)
+        if has_unsatisfied and state.replan_rounds < max_replan_rounds:
+            return "llm_replan"
         return "verify_critical_claims"
 
     # -----------------------------------------------------------------------
@@ -227,6 +242,7 @@ def build_graph(
     graph.add_node("aggregate_sources_node", _node_aggregate)
     graph.add_node("check_coverage", _node_coverage)
     graph.add_node("plan_gap_retrieval", _node_gap)
+    graph.add_node("llm_replan", _node_llm_replan)
     graph.add_node("verify_critical_claims", _node_verify)
     graph.add_node("generate_answer", _node_generate)
     graph.add_node("validate_citations", _node_validate_cit)
@@ -260,10 +276,12 @@ def build_graph(
         _route_coverage,
         {
             "plan_gap_retrieval": "plan_gap_retrieval",
+            "llm_replan": "llm_replan",
             "verify_critical_claims": "verify_critical_claims",
         },
     )
     graph.add_edge("plan_gap_retrieval", "execute_retrieval_tools")
+    graph.add_edge("llm_replan", "execute_retrieval_tools")
 
     graph.add_edge("verify_critical_claims", "generate_answer")
     graph.add_edge("generate_answer", "validate_citations")
