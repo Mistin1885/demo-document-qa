@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.errors import VespaDimensionMismatch
 
@@ -101,6 +101,14 @@ class VespaChunk(BaseModel):
     title: str = ""
     heading_path: str = ""
     content: str
+    embedding_content: str = ""
+    """Search/embedding text. Defaults to ``content``.
+
+    For tables, ``content`` intentionally remains the raw HTML evidence shown
+    to the answer generator, while ``embedding_content`` blends same-page text,
+    caption, and a natural-language table description to make semantic
+    retrieval hit table chunks.
+    """
 
     keywords: list[str] = Field(default_factory=list)
     technical_keywords: list[str] = Field(default_factory=list)
@@ -120,6 +128,12 @@ class VespaChunk(BaseModel):
 
     created_at: int = Field(default=0)
     """Unix epoch milliseconds (long in Vespa schema)."""
+
+    @model_validator(mode="after")
+    def _default_embedding_content(self) -> VespaChunk:
+        if not self.embedding_content:
+            self.embedding_content = self.content
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +226,7 @@ class VespaFeedClient:
             "title": chunk.title,
             "heading_path": chunk.heading_path,
             "content": chunk.content,
+            "embedding_content": chunk.embedding_content,
             "keywords": chunk.keywords,
             "technical_keywords": chunk.technical_keywords,
             "entities": chunk.entities,

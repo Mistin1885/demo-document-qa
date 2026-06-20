@@ -136,6 +136,7 @@ def _build_bm25_first_phase() -> str:
         "2.0 * bm25(title)"
         " + 1.5 * bm25(heading_path)"
         " + 1.0 * bm25(content)"
+        " + 0.8 * bm25(embedding_content)"
         " + 1.2 * bm25(keywords)"
         " + 1.2 * bm25(technical_keywords)"
         " + 1.0 * bm25(entities)"
@@ -153,6 +154,7 @@ def _build_schema(embedding_dim: int) -> Schema:
     # ------------------------------------------------------------------
     common_match_features = [
         "bm25(content)",
+        "bm25(embedding_content)",
         "bm25(title)",
         "bm25(heading_path)",
         "bm25(keywords)",
@@ -320,6 +322,12 @@ def _build_schema(embedding_dim: int) -> Schema:
                     indexing=["index", "summary"],
                     index="enable-bm25",
                 ),
+                Field(
+                    name="embedding_content",
+                    type="string",
+                    indexing=["index", "summary"],
+                    index="enable-bm25",
+                ),
                 # ---------- keyword / entity arrays ----------
                 Field(
                     name="keywords",
@@ -364,7 +372,7 @@ def _build_schema(embedding_dim: int) -> Schema:
                 Field(
                     name="embedding",
                     type=tensor_type,
-                    indexing=["input content | embed e5", "attribute", "index"],
+                    indexing=["input embedding_content | embed e5", "attribute", "index"],
                     ann=HNSW(distance_metric="angular"),
                     is_document_field=False,
                 ),
@@ -381,6 +389,7 @@ def _build_schema(embedding_dim: int) -> Schema:
                 name="default",
                 fields=[
                     "content",
+                    "embedding_content",
                     "title",
                     "heading_path",
                     "keywords",

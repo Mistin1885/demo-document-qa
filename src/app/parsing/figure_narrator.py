@@ -281,6 +281,9 @@ async def narrate_blocks(
                 page_text=page_text or "(no same-page text)",
             )
 
+        if image_path is None:
+            return None
+
         try:
             image_b64 = encode_path_to_b64(image_path, vlm.settings)
         except FileNotFoundError as exc:

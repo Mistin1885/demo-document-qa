@@ -12,13 +12,16 @@
  * Switching either param causes useChatStream to reset (isolation guard).
  */
 
-import { Suspense } from "react";
+import { Suspense, useMemo } from "react";
 
 import { SessionList } from "@/components/session/SessionList";
 import { useChatStream } from "@/lib/chat/useChatStream";
 import { useGenerationPrefs } from "@/lib/chat/useGenerationPrefs";
 import { useCurrentChatId } from "@/lib/hooks/useCurrentChatId";
 import { useCurrentSessionId } from "@/lib/hooks/useCurrentSessionId";
+import { useDocuments } from "@/lib/queries/documents";
+import { useSession } from "@/lib/queries/sessions";
+import { useDocumentScopeSelection } from "@/lib/session/useDocumentScopeSelection";
 
 import { GenerationPrefsPanel } from "./GenerationPrefsPanel";
 import { MessageList } from "./MessageList";
@@ -33,13 +36,38 @@ function ChatPanelInner() {
   const { sessionId } = useCurrentSessionId();
 
   const { prefs, setPrefs, reset: resetPrefs } = useGenerationPrefs(chatId);
-  const { messages, sendMessage, stop, isStreaming, error } = useChatStream(
+  const { data: documents } = useDocuments(chatId);
+  const { data: session, isLoading: sessionLoading, isError: sessionError } = useSession(
+    chatId,
+    sessionId
+  );
+  const documentIds = useMemo(
+    () => (documents ?? []).map((doc) => doc.id),
+    [documents]
+  );
+  const { selectedDocumentIds } = useDocumentScopeSelection(
     chatId,
     sessionId,
-    prefs
+    documentIds,
+    session?.selected_document_ids,
+    session?.document_scope_locked ?? false
   );
-
-  const ready = !!chatId && !!sessionId;
+  const ready = !!chatId && !!sessionId && session?.chat_id === chatId;
+  const statusHint = !chatId
+    ? "Select a chat from the sidebar to get started."
+    : !sessionId
+    ? "Select or create a session above to start a conversation."
+    : sessionLoading
+    ? "Loading session…"
+    : sessionError
+    ? "This session does not belong to the selected chat. Please choose another session."
+    : "Select or create a session above to start a conversation.";
+  const { messages, sendMessage, stop, isStreaming, error } = useChatStream(
+    chatId,
+    ready ? sessionId : null,
+    prefs,
+    selectedDocumentIds
+  );
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -58,9 +86,7 @@ function ChatPanelInner() {
       {!ready && (
         <div className="flex-1 flex items-center justify-center p-8">
           <p className="text-sm text-[var(--muted)] text-center">
-            {!chatId
-              ? "Select a chat from the sidebar to get started."
-              : "Select or create a session above to start a conversation."}
+            {statusHint}
           </p>
         </div>
       )}

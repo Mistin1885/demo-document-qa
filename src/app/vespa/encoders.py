@@ -65,6 +65,33 @@ def _strip_html_table(html: str, *, limit: int = 4_000) -> str:
     return text[:limit]
 
 
+def _compose_table_embedding_content(
+    *,
+    caption: str | None,
+    footnote: str | None,
+    html_body: str,
+    page_text_excerpt: str = "",
+) -> str:
+    """Build semantic text for embedding a table whose evidence is HTML.
+
+    The returned text intentionally combines local prose, caption, footnote and
+    a natural-language representation of visible table cells.  The chunk
+    ``content`` can therefore stay as raw ``<table>`` HTML for citations and
+    final evidence, while retrieval still has rich natural-language signal.
+    """
+    table_text = _strip_html_table(html_body)
+    parts: list[str] = []
+    if caption:
+        parts.append(caption.strip())
+    if table_text:
+        parts.append("Natural-language table description: table rows and columns contain " + table_text)
+    if footnote:
+        parts.append(f"Footnote: {footnote.strip()}")
+    if page_text_excerpt.strip():
+        parts.append("Same-page context:\n" + page_text_excerpt.strip())
+    return "\n\n".join(p for p in parts if p)
+
+
 # ---------------------------------------------------------------------------
 # encode_raw_blocks
 # ---------------------------------------------------------------------------
@@ -138,16 +165,7 @@ def encode_raw_blocks(
             content = block.text
         elif block.block_type == BlockType.table:
             tbl = block.table
-            parts: list[str] = []
-            if tbl and tbl.caption:
-                parts.append(tbl.caption)
-            if tbl and tbl.footnote:
-                parts.append(f"Footnote: {tbl.footnote}")
-            if tbl and tbl.html_body:
-                table_text = _strip_html_table(tbl.html_body)
-                if table_text:
-                    parts.append(f"Table body:\n{table_text}")
-            content = "\n\n".join(parts)
+            content = tbl.html_body if tbl and tbl.html_body else (tbl.caption if tbl and tbl.caption else "")
         elif block.block_type in (BlockType.table_caption, BlockType.table_footnote):
             content = block.text
         else:
@@ -171,6 +189,15 @@ def encode_raw_blocks(
             title=block.text[:200] if block.block_type == BlockType.title else "",
             heading_path=current_heading,
             content=content,
+            embedding_content=(
+                _compose_table_embedding_content(
+                    caption=block.table.caption,
+                    footnote=block.table.footnote,
+                    html_body=block.table.html_body,
+                )
+                if block.block_type == BlockType.table and block.table is not None
+                else ""
+            ),
             page_start=block.page_number,
             page_end=block.page_number,
             order_index=block.reading_order,
@@ -554,6 +581,15 @@ def _compose_narration_content(narration: FigureNarration) -> str:
     return content
 
 
+def _compose_table_narration_embedding_content(narration: FigureNarration) -> str:
+    return _compose_table_embedding_content(
+        caption=narration.caption,
+        footnote=narration.footnote,
+        html_body=narration.narrative_text,
+        page_text_excerpt=narration.page_text_excerpt,
+    )
+
+
 def encode_figure_narrations(
     narrations: list[FigureNarration],
     *,
@@ -584,7 +620,14 @@ def encode_figure_narrations(
             if narration.block_type == BlockType.table
             else "figure_caption"
         )
-        content = _compose_narration_content(narration)
+        if source_type == "table_record":
+            # Evidence content must be the actual HTML table. Retrieval embeds
+            # a richer natural-language companion via ``embedding_content``.
+            content = narration.narrative_text.strip()
+            embedding_content = _compose_table_narration_embedding_content(narration)
+        else:
+            content = _compose_narration_content(narration)
+            embedding_content = ""
         if not content:
             continue
 
@@ -604,6 +647,7 @@ def encode_figure_narrations(
                 title=(narration.caption or narration.image_path or "")[:200],
                 heading_path=narration.caption or "",
                 content=content,
+                embedding_content=embedding_content,
                 page_start=narration.page_number,
                 page_end=narration.page_number,
                 order_index=narration.reading_order,

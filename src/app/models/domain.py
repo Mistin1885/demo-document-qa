@@ -54,7 +54,7 @@ class ToolTraceStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tool_name: str
-    status: Literal["ok", "overflow", "error"]
+    status: Literal["ok", "overflow", "error", "info"]
     token_estimate: int | None = None
     note: str | None = None
 
@@ -210,11 +210,13 @@ class SessionCreate(BaseModel):
     chat_id: uuid.UUID
     name: str | None = None
     chat_profile_id: uuid.UUID | None = None
+    selected_document_ids: list[uuid.UUID] | None = None
 
 
 class SessionUpdate(BaseModel):
     name: str | None = None
     chat_profile_id: uuid.UUID | None = None
+    selected_document_ids: list[uuid.UUID] | None = None
 
 
 class SessionRead(BaseModel):
@@ -224,6 +226,8 @@ class SessionRead(BaseModel):
     chat_id: uuid.UUID
     name: str | None
     chat_profile_id: uuid.UUID | None
+    selected_document_ids: list[uuid.UUID] | None = None
+    document_scope_locked: bool = False
     created_at: datetime
     updated_at: datetime
 

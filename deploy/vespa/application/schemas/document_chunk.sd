@@ -42,6 +42,10 @@ schema document_chunk {
             indexing: index | summary
             index: enable-bm25
         }
+        field embedding_content type string {
+            indexing: index | summary
+            index: enable-bm25
+        }
         field keywords type array<string> {
             indexing: attribute | index | summary
             index: enable-bm25
@@ -71,7 +75,7 @@ schema document_chunk {
         }
     }
     field embedding type tensor<float>(x[384]) {
-        indexing: input content | embed e5 | attribute | index
+        indexing: input embedding_content | embed e5 | attribute | index
         attribute {
             distance-metric: angular
         }
@@ -83,7 +87,7 @@ schema document_chunk {
         }
     }
     fieldset default {
-        fields: content, title, heading_path, keywords, technical_keywords, entities
+        fields: content, embedding_content, title, heading_path, keywords, technical_keywords, entities
     }
     rank-profile bm25_only {
         inputs {
@@ -91,7 +95,7 @@ schema document_chunk {
         }
         function bm25_weighted() {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         function semantic_score() {
@@ -101,11 +105,12 @@ schema document_chunk {
         }
         first-phase {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         summary-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -114,6 +119,7 @@ schema document_chunk {
         }
         match-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -127,7 +133,7 @@ schema document_chunk {
         }
         function bm25_weighted() {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         function semantic_score() {
@@ -142,6 +148,7 @@ schema document_chunk {
         }
         summary-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -150,6 +157,7 @@ schema document_chunk {
         }
         match-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -163,7 +171,7 @@ schema document_chunk {
         }
         function bm25_weighted() {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         function semantic_score() {
@@ -183,7 +191,7 @@ schema document_chunk {
         }
         first-phase {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
             }
         }
         second-phase {
@@ -194,6 +202,7 @@ schema document_chunk {
         }
         summary-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -202,6 +211,7 @@ schema document_chunk {
         }
         match-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -215,7 +225,7 @@ schema document_chunk {
         }
         function bm25_weighted() {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         function semantic_score() {
@@ -241,6 +251,7 @@ schema document_chunk {
         }
         summary-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -249,6 +260,7 @@ schema document_chunk {
         }
         match-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -262,7 +274,7 @@ schema document_chunk {
         }
         function bm25_weighted() {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities)
             }
         }
         function semantic_score() {
@@ -272,11 +284,12 @@ schema document_chunk {
         }
         first-phase {
             expression {
-                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
+                2.0 * bm25(title) + 1.5 * bm25(heading_path) + 1.0 * bm25(content) + 0.8 * bm25(embedding_content) + 1.2 * bm25(keywords) + 1.2 * bm25(technical_keywords) + 1.0 * bm25(entities) + 100.0 * closeness(field, embedding)
             }
         }
         summary-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)
@@ -285,6 +298,7 @@ schema document_chunk {
         }
         match-features {
             bm25(content)
+            bm25(embedding_content)
             bm25(title)
             bm25(heading_path)
             bm25(keywords)

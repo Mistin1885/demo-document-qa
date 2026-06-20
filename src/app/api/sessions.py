@@ -53,6 +53,8 @@ async def create_session(
         return await session_service.create_session(db, chat_id=chat_id, data=body)
     except ChatNotFound as exc:
         raise _not_found(str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +133,8 @@ async def patch_session(
         )
     except SessionNotFound as exc:
         raise _not_found(str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

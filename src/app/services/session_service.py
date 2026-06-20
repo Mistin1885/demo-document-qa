@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import ChatNotFound, SessionNotFound
 from app.models.domain import MessageRead, SessionCreate, SessionRead, SessionUpdate
-from app.models.orm import Chat, Message
+from app.models.orm import Chat, Document, Message
 from app.models.orm import Session as SessionORM
 
 
@@ -62,6 +62,32 @@ async def _require_session(
     return orm_session
 
 
+async def _validate_document_scope(
+    db: AsyncSession,
+    *,
+    chat_id: uuid.UUID,
+    document_ids: list[uuid.UUID] | None,
+) -> list[str] | None:
+    if document_ids is None:
+        return None
+    unique_ids = list(dict.fromkeys(document_ids))
+    if not unique_ids:
+        return []
+    rows = (
+        await db.scalars(
+            select(Document.id).where(
+                Document.chat_id == chat_id,
+                Document.id.in_(unique_ids),
+            )
+        )
+    ).all()
+    found = set(rows)
+    missing = [str(doc_id) for doc_id in unique_ids if doc_id not in found]
+    if missing:
+        raise ValueError(f"document scope contains documents outside this chat: {missing}")
+    return [str(doc_id) for doc_id in unique_ids]
+
+
 async def create_session(
     db: AsyncSession,
     *,
@@ -81,6 +107,11 @@ async def create_session(
         chat_id=chat_id,
         name=data.name,
         chat_profile_id=data.chat_profile_id,
+        selected_document_ids=await _validate_document_scope(
+            db,
+            chat_id=chat_id,
+            document_ids=data.selected_document_ids,
+        ),
     )
     db.add(orm_session)
     await db.flush()  # populate server-generated defaults without committing
@@ -151,12 +182,61 @@ async def update_session(
     orm_session = await _require_session(db, chat_id=chat_id, session_id=session_id)
 
     update_data = data.model_dump(exclude_unset=True)
+    if "selected_document_ids" in update_data:
+        if orm_session.document_scope_locked:
+            raise ValueError("document scope is locked after the first QA")
+        update_data["selected_document_ids"] = await _validate_document_scope(
+            db,
+            chat_id=chat_id,
+            document_ids=data.selected_document_ids,
+        )
     for field, value in update_data.items():
         setattr(orm_session, field, value)
 
     await db.flush()
     await db.refresh(orm_session)
     return SessionRead.model_validate(orm_session)
+
+
+async def lock_document_scope_for_qa(
+    db: AsyncSession,
+    *,
+    chat_id: uuid.UUID,
+    session_id: uuid.UUID,
+    requested_document_ids: list[uuid.UUID] | None,
+) -> list[uuid.UUID]:
+    """Lock and return the effective document scope for a session QA.
+
+    The first QA fixes the scope. If the caller does not provide a scope, all
+    current chat documents are selected and locked. Later QAs ignore new
+    request scopes and reuse the locked value.
+    """
+    orm_session = await _require_session(db, chat_id=chat_id, session_id=session_id)
+
+    if orm_session.document_scope_locked:
+        return [uuid.UUID(str(doc_id)) for doc_id in (orm_session.selected_document_ids or [])]
+
+    effective: list[str]
+    if requested_document_ids is None:
+        rows = (
+            await db.scalars(
+                select(Document.id)
+                .where(Document.chat_id == chat_id)
+                .order_by(Document.created_at)
+            )
+        ).all()
+        effective = [str(doc_id) for doc_id in rows]
+    else:
+        effective = await _validate_document_scope(
+            db,
+            chat_id=chat_id,
+            document_ids=requested_document_ids,
+        ) or []
+
+    orm_session.selected_document_ids = effective
+    orm_session.document_scope_locked = True
+    await db.flush()
+    return [uuid.UUID(str(doc_id)) for doc_id in (effective or [])]
 
 
 async def delete_session(
@@ -220,4 +300,5 @@ __all__ = [
     "update_session",
     "delete_session",
     "list_messages",
+    "lock_document_scope_for_qa",
 ]

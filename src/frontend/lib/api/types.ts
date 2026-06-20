@@ -55,7 +55,7 @@ export interface Citation {
 
 export interface ToolTraceStep {
   tool_name: string;
-  status: "ok" | "overflow" | "error";
+  status: "ok" | "overflow" | "error" | "info";
   token_estimate: number | null;
   note: string | null;
 }
@@ -112,11 +112,13 @@ export interface SessionCreate {
   chat_id: string;
   name?: string | null;
   chat_profile_id?: string | null;
+  selected_document_ids?: string[] | null;
 }
 
 export interface SessionUpdate {
   name?: string | null;
   chat_profile_id?: string | null;
+  selected_document_ids?: string[] | null;
 }
 
 export interface SessionRead {
@@ -124,6 +126,8 @@ export interface SessionRead {
   chat_id: string;
   name: string | null;
   chat_profile_id: string | null;
+  selected_document_ids: string[] | null;
+  document_scope_locked: boolean;
   created_at: string;
   updated_at: string;
 }

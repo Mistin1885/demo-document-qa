@@ -17,7 +17,15 @@ import { useCallback } from "react";
 
 export interface UseCurrentSessionIdReturn {
   sessionId: string | null;
-  setSessionId: (id: string | null) => void;
+  setSessionId: (id: string | null, chatIdOverride?: string | null) => void;
+}
+
+export function buildSessionHref(chatId: string | null, sessionId: string | null): string {
+  const params = new URLSearchParams();
+  if (chatId) params.set("chatId", chatId);
+  if (sessionId) params.set("sessionId", sessionId);
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
 }
 
 export function useCurrentSessionId(): UseCurrentSessionIdReturn {
@@ -27,13 +35,9 @@ export function useCurrentSessionId(): UseCurrentSessionIdReturn {
   const sessionId = searchParams.get("sessionId");
 
   const setSessionId = useCallback(
-    (id: string | null) => {
-      const chatId = searchParams.get("chatId");
-      const params = new URLSearchParams();
-      if (chatId) params.set("chatId", chatId);
-      if (id) params.set("sessionId", id);
-      const qs = params.toString();
-      router.push(qs ? `/?${qs}` : "/");
+    (id: string | null, chatIdOverride?: string | null) => {
+      const chatId = chatIdOverride !== undefined ? chatIdOverride : searchParams.get("chatId");
+      router.push(buildSessionHref(chatId, id));
     },
     [router, searchParams]
   );

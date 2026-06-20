@@ -389,6 +389,12 @@ class AgentState(BaseModel):
     # --- Chat / document context ---
     chat_manifest: ChatManifestSnapshot | None = None
     document_manifests: list[DocumentManifest] = Field(default_factory=list)
+    scoped_document_ids: list[UUID] = Field(default_factory=list)
+    """Optional session-level document scope chosen before the first QA.
+
+    Empty means "all chat documents". When populated, retrieval/inspection
+    tools must filter to this allow-list.
+    """
 
     # --- Planning ---
     plan: AgentPlan | None = None

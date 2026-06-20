@@ -25,6 +25,8 @@ export interface GenerationOverrides {
   context_window?: number;
   /** Deep QA mode: ignore soft budget and include same-session memory. */
   deep_qa_mode?: boolean;
+  /** Optional first-turn session document scope; backend locks after first QA. */
+  selected_document_ids?: string[];
 }
 
 export interface AskOptions extends GenerationOverrides {

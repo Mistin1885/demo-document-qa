@@ -88,7 +88,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </span>
           )}
           {!content && isStreaming && (
-            <span className="text-xs opacity-60">Thinking…</span>
+            <span className="text-xs opacity-60">Planning and retrieving evidence…</span>
           )}
         </p>
 

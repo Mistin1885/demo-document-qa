@@ -47,11 +47,21 @@ def _is_summary_path(state: AgentState) -> bool:
     return _SUMMARY_MARKER in state.plan.rationale or "fetch_structural_nodes" in state.plan.chosen_tools
 
 
+def _document_scope(state: AgentState) -> list[uuid.UUID] | None:
+    return list(state.scoped_document_ids) or None
+
+
 def _search_params(state: AgentState, query: str, *, preset: str) -> SearchHybridParams:
     """Build search params, widening retrieval when deep QA is enabled."""
     if state.generation_config.deep_qa_mode:
-        return SearchHybridParams(query=query, preset="broad", top_k=20, max_tokens=12_000)
-    return SearchHybridParams(query=query, preset=preset)
+        return SearchHybridParams(
+            query=query,
+            document_ids=_document_scope(state),
+            preset="broad",
+            top_k=20,
+            max_tokens=12_000,
+        )
+    return SearchHybridParams(query=query, document_ids=_document_scope(state), preset=preset)
 
 
 def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
@@ -77,6 +87,9 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                 replan_invocations.append((
                     request.tool,
                     FetchStructuralNodesParams(
+                        document_ids=request.document_id
+                        and [request.document_id]
+                        or _document_scope(state),
                         source_types=request.source_types or None,
                     ),
                 ))
@@ -84,6 +97,9 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                 replan_invocations.append((
                     request.tool,
                     QueryStructuredFactsParams(
+                        document_ids=request.document_id
+                        and [request.document_id]
+                        or _document_scope(state),
                         kinds=request.fact_kinds or None,  # type: ignore[arg-type]
                         keys=request.fact_keys or None,
                     ),
@@ -114,9 +130,14 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
         elif tool_name == "inspect_document":
             if summary_path and state.document_manifests:
                 for dm in state.document_manifests:
+                    if state.scoped_document_ids and dm.document_id not in state.scoped_document_ids:
+                        continue
                     invocations.append((tool_name, InspectDocumentParams(document_id=dm.document_id)))
             else:
                 doc_id = (
+                    state.scoped_document_ids[0]
+                    if state.scoped_document_ids
+                    else
                     state.document_manifests[0].document_id
                     if state.document_manifests
                     else uuid.UUID(int=0)
@@ -127,6 +148,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
             invocations.append((
                 tool_name,
                 FetchStructuralNodesParams(
+                    document_ids=_document_scope(state),
                     source_types=["document_overview", "chapter_summary", "compact_chapter_summary"],
                 ),
             ))
@@ -149,7 +171,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                 if not remaining_gaps:
                     invocations.append((
                         tool_name,
-                        _search_params(state, state.question, preset=preset),
+                        _search_params(state, state.plan.goal, preset=preset),
                     ))
 
         elif tool_name == "query_structured_facts":
@@ -160,6 +182,7 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                     QueryStructuredFactsParams(
                         kinds=hints.kinds or None,  # type: ignore[arg-type]
                         keys=hints.keys or None,
+                        document_ids=_document_scope(state),
                     ),
                 )
             )

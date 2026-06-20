@@ -77,6 +77,8 @@ def upgrade() -> None:
     sa.Column('chat_id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=True),
     sa.Column('chat_profile_id', sa.UUID(), nullable=True),
+    sa.Column('selected_document_ids', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('document_scope_locked', sa.Boolean(), server_default=sa.false(), nullable=False),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ondelete='CASCADE'),

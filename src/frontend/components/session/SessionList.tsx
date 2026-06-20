@@ -176,14 +176,10 @@ export function SessionList() {
       { chatId, body: {} },
       {
         onSuccess: (created) => {
-          setSessionId(created.id);
+          setSessionId(created.id, chatId);
         },
       }
     );
-  }
-
-  if (!chatId) {
-    return null;
   }
 
   // Sort by updated_at descending
@@ -191,6 +187,10 @@ export function SessionList() {
     (a, b) =>
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   );
+
+  if (!chatId) {
+    return null;
+  }
 
   return (
     <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border)] overflow-x-auto shrink-0">
@@ -216,7 +216,7 @@ export function SessionList() {
               session={session}
               isActive={session.id === sessionId}
               chatId={chatId}
-              onSelect={() => setSessionId(session.id)}
+              onSelect={() => setSessionId(session.id, chatId)}
             />
           </div>
         ))}

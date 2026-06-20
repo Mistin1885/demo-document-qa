@@ -15,6 +15,7 @@ import {
 import {
   createSession,
   deleteSession,
+  getSession,
   listSessions,
   updateSession,
 } from "@/lib/api/sessions";
@@ -47,6 +48,16 @@ export function useSessionMessages(
   });
 }
 
+/** Fetch one session metadata row, including locked document scope. */
+export function useSession(chatId: string | null, sessionId: string | null) {
+  return useQuery({
+    queryKey:
+      chatId && sessionId ? queryKeys.session(chatId, sessionId) : ["__no_session__"],
+    queryFn: () => getSession(chatId!, sessionId!),
+    enabled: !!chatId && !!sessionId,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -65,6 +76,9 @@ export function useCreateSession() {
     onSuccess: (_data, { chatId }) => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.sessions(chatId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.session(chatId, _data.id),
       });
     },
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import {
@@ -9,6 +9,8 @@ import {
   useUploadDocument,
   useDeleteDocument,
 } from "@/lib/queries/documents";
+import { useSession } from "@/lib/queries/sessions";
+import { useDocumentScopeSelection } from "@/lib/session/useDocumentScopeSelection";
 import { DocumentList } from "./DocumentList";
 import { UploadZone } from "./UploadZone";
 
@@ -27,6 +29,7 @@ export function DocumentsPanel() {
   // Read chatId from URL — same source as Phase 8.2's useCurrentChatId
   const searchParams = useSearchParams();
   const chatId = searchParams.get("chatId");
+  const sessionId = searchParams.get("sessionId");
 
   // Upload progress state lives here so UploadZone stays presentational
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -44,6 +47,18 @@ export function DocumentsPanel() {
   } = useDocuments(chatId);
 
   const { data: manifest } = useChatManifest(chatId);
+  const { data: session } = useSession(chatId, sessionId);
+  const availableDocumentIds = useMemo(
+    () => (documents ?? []).map((doc) => doc.id),
+    [documents]
+  );
+  const docScope = useDocumentScopeSelection(
+    chatId,
+    sessionId,
+    availableDocumentIds,
+    session?.selected_document_ids,
+    session?.document_scope_locked ?? false
+  );
 
   // Mutations
   const uploadMutation = useUploadDocument(chatId);
@@ -166,6 +181,12 @@ export function DocumentsPanel() {
             manifest={manifest}
             deletingIds={deletingIds}
             onDelete={handleDelete}
+            selectedIds={new Set(docScope.selectedDocumentIds)}
+            onToggleSelected={docScope.toggleDocumentId}
+            onSelectAll={docScope.selectAll}
+            onClearSelection={docScope.clearSelection}
+            selectionLocked={session?.document_scope_locked ?? false}
+            allSelected={docScope.allSelected}
           />
         )}
       </div>

@@ -190,7 +190,7 @@ def test_raw_blocks_heading_path_propagated() -> None:
 
 
 def test_raw_blocks_image_and_table_use_caption() -> None:
-    """Image caption and table caption/body are exposed as searchable content."""
+    """Table evidence is raw HTML; caption/body feed embedding_content."""
     from app.parsing.models import ImageRef, TableRef
 
     chat_id, doc_id = uuid.uuid4(), uuid.uuid4()
@@ -222,7 +222,9 @@ def test_raw_blocks_image_and_table_use_caption() -> None:
     chunks = encode_raw_blocks([img_block, tbl_block], chat_id, doc_id)
     assert len(chunks) == 2
     assert chunks[0].content == "Figure 1 caption"
-    assert "Table 1 caption" in chunks[1].content
+    assert chunks[1].content.startswith("<table>")
+    assert "Table 1 caption" in chunks[1].embedding_content
+    assert "Natural-language table description" in chunks[1].embedding_content
     assert "LightRAG" in chunks[1].content
     assert "73.4" in chunks[1].content
 

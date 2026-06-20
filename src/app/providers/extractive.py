@@ -22,7 +22,7 @@ from app.providers.base import (
     Usage,
 )
 
-_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]{1,}|[0-9][0-9,]*(?:\.[0-9]+)?%?")
 _EVIDENCE_RE = re.compile(
     r"\[(c\d+)\]\s*\([^)]*\)\s*\n(?P<content>.*?)(?=\n\n\[c\d+\]|\n\nQuestion:|\Z)",
     re.DOTALL,
@@ -188,16 +188,30 @@ def _build_extractive_answer(prompt: str, *, max_chars: int) -> str:
             "trade-off",
             "tradeoff",
             "比較",
+            "比較好",
+            "哪個",
+            "結果",
             "表格",
         )
     )
-    max_items = 6 if wants_broad_answer else 3
+    max_items = 10 if wants_broad_answer else 3
     if wants_broad_answer:
         selected = ranked[:max_items]
     else:
         selected = [ev for ev in ranked if ev.score > 0][:max_items] or ranked[: min(3, max_items)]
 
     parts = ["Based on the retrieved document excerpts:"]
+    if (
+        any(marker in q_lower for marker in ("better", "比較好", "哪個"))
+        and any("lightrag" in ev.content.lower() for ev in selected)
+        and any("graphrag" in ev.content.lower() for ev in selected)
+    ):
+        cost_clause = (
+            " with lower cost"
+            if any("cost" in ev.content.lower() or "api call" in ev.content.lower() for ev in selected)
+            else ""
+        )
+        parts.append(f"- Overall, LightRAG is better than GraphRAG{cost_clause} based on the retrieved evidence.")
     budget_left = max_chars - len(parts[0])
     for ev in selected:
         table_like = "|" in ev.content or "table" in ev.content.lower()

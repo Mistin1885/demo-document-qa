@@ -151,8 +151,25 @@ def _comparison_gap_queries(question: str) -> list[str]:
 
 
 def _question_with_session_context(state: AgentState) -> str:
-    """Return retrieval-oriented question, including recent history in deep mode."""
-    if not state.generation_config.deep_qa_mode or not state.conversation_history:
+    """Return retrieval-oriented question with history for deep/ambiguous follow-ups."""
+    q_lower = state.question.lower()
+    ambiguous_follow_up = any(
+        marker in q_lower
+        for marker in (
+            "which is better",
+            "which one",
+            "what about",
+            "follow up",
+            "哪個",
+            "比較好",
+            "結果",
+            "那",
+        )
+    )
+    if (
+        not (state.generation_config.deep_qa_mode or ambiguous_follow_up)
+        or not state.conversation_history
+    ):
         return state.question
     recent = state.conversation_history[-4:]
     history = " ".join(f"{turn.role}: {turn.content}" for turn in recent)

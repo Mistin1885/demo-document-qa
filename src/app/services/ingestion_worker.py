@@ -96,8 +96,8 @@ async def _build_chat_provider(
     chat_provider: ChatProvider = MockChatProvider()
     if chat is not None and chat.default_chat_profile is not None:
         try:
-            chat_provider = build_chat_provider(  # type: ignore[arg-type]
-                _profile_as_like(chat.default_chat_profile)
+            chat_provider = build_chat_provider(
+                _profile_as_like(chat.default_chat_profile)  # type: ignore[arg-type]
             )
         except Exception:
             logger.exception("Falling back to mock chat provider for ingestion")

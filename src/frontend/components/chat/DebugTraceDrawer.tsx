@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * DebugTraceDrawer — collapsible display for LangGraph tool trace.
+ * DebugTraceDrawer — collapsible display for LangGraph decision/tool trace.
  *
  * Shows per-step tool name, status, token estimate, and note.
  * Collapsed by default; toggled by clicking the header.
@@ -16,6 +16,7 @@ interface DebugTraceDrawerProps {
 
 const STATUS_COLORS: Record<string, string> = {
   ok: "text-emerald-400",
+  info: "text-sky-400",
   overflow: "text-amber-400",
   error: "text-rose-400",
 };
@@ -31,10 +32,10 @@ export function DebugTraceDrawer({ trace }: DebugTraceDrawerProps) {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-1.5 bg-[var(--surface-raised)] text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
         aria-expanded={open}
-        aria-label="Toggle debug trace"
+        aria-label="Toggle reasoning trace"
       >
         <span className="font-mono">
-          Debug trace · {trace.total_rounds} round{trace.total_rounds !== 1 ? "s" : ""}
+          Reasoning trace · {trace.total_rounds} round{trace.total_rounds !== 1 ? "s" : ""}
           {trace.token_count_is_estimate && " (est.)"}
         </span>
         <svg

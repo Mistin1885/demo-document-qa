@@ -9,6 +9,9 @@ interface DocumentListItemProps {
   manifestEntry?: DocumentManifestEntry | null;
   onDelete: (docId: string, name: string) => void;
   isDeleting: boolean;
+  selected: boolean;
+  onToggleSelected: (docId: string) => void;
+  selectionLocked: boolean;
 }
 
 function fmt(n: number | null | undefined): string {
@@ -21,6 +24,9 @@ export function DocumentListItem({
   manifestEntry,
   onDelete,
   isDeleting,
+  selected,
+  onToggleSelected,
+  selectionLocked,
 }: DocumentListItemProps) {
   const sectionCount =
     manifestEntry != null ? manifestEntry.section_count : null;
@@ -31,12 +37,22 @@ export function DocumentListItem({
     <li className="group flex flex-col gap-1.5 rounded-lg px-3 py-2.5 hover:bg-[var(--surface-raised)] transition-colors">
       {/* Top row: filename + delete */}
       <div className="flex items-start justify-between gap-2 min-w-0">
-        <span
-          className="text-xs font-medium text-[var(--foreground)] truncate"
-          title={doc.original_filename}
-        >
-          {doc.original_filename}
-        </span>
+        <label className="flex items-start gap-2 min-w-0 flex-1">
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={selectionLocked}
+            onChange={() => onToggleSelected(doc.id)}
+            className="mt-0.5 h-3.5 w-3.5 rounded border-[var(--border)] accent-[var(--accent)] disabled:opacity-60"
+            aria-label={`Use ${doc.original_filename} for this session QA`}
+          />
+          <span
+            className="text-xs font-medium text-[var(--foreground)] truncate"
+            title={doc.original_filename}
+          >
+            {doc.original_filename}
+          </span>
+        </label>
         <button
           aria-label={`Delete ${doc.original_filename}`}
           disabled={isDeleting}

@@ -92,8 +92,10 @@ async def test_image_table_formula_blocks_are_chunked_and_embedded() -> None:
 
     assert report.success_count == 3
     contents = "\n".join(c.content for c in vespa.chunks)
+    embedding_texts = "\n".join(c.embedding_content for c in vespa.chunks)
     assert "latency curve" in contents
-    assert "F1 scores" in contents
+    assert "<table>" in contents
+    assert "F1 scores" in embedding_texts
     assert "F1 = 2PR" in contents
-    assert embedding.texts == [c.content for c in vespa.chunks]
+    assert embedding.texts == [c.embedding_content for c in vespa.chunks]
     assert all(c.embedding == [1.0, 0.0, 0.0] for c in vespa.chunks)

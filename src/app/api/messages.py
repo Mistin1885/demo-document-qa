@@ -75,6 +75,7 @@ class MessageRequest(BaseModel):
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     context_window: int | None = Field(default=None, ge=1_000, le=200_000)
     deep_qa_mode: bool = False
+    selected_document_ids: list[uuid.UUID] | None = None
 
 
 def _generation_config_from_request(body: MessageRequest) -> GenerationConfig:
@@ -289,6 +290,7 @@ async def post_message(
                 chat_provider=chat_provider,
                 stop_event=stop_event,
                 generation_config=gen_cfg,
+                selected_document_ids=body.selected_document_ids,
             ):
                 # Check client disconnect between events
                 if await request.is_disconnected():
@@ -316,6 +318,7 @@ async def post_message(
             body.question,
             chat_provider=chat_provider,
             generation_config=gen_cfg,
+            selected_document_ids=body.selected_document_ids,
         )
     except SessionNotFound as exc:
         raise _not_found(str(exc)) from exc

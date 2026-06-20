@@ -147,6 +147,7 @@ async def _persist_qa_pair(
     question: str,
     answer: str,
     citations: list[Citation],
+    tool_trace: ToolTrace | None = None,
 ) -> uuid.UUID:
     """Write user question + assistant answer; return the assistant message id."""
     user_msg = Message(
@@ -164,6 +165,7 @@ async def _persist_qa_pair(
         role="assistant",
         content=answer,
         citations=[c.model_dump(mode="json") for c in citations] if citations else None,
+        tool_trace=tool_trace.model_dump(mode="json") if tool_trace is not None else None,
     )
     db.add(assistant_msg)
     await db.flush()
@@ -207,15 +209,50 @@ def _map_citations(
 
 
 def _build_tool_trace(state: AgentState) -> ToolTrace:
-    steps = [
+    steps: list[ToolTraceStep] = []
+    if state.plan is not None:
+        note_parts = []
+        if state.plan.rationale:
+            note_parts.append(state.plan.rationale)
+        if state.plan.information_needs:
+            note_parts.append("needs: " + "; ".join(state.plan.information_needs[:4]))
+        if state.plan.gap_queries:
+            note_parts.append("queries: " + "; ".join(state.plan.gap_queries[:4]))
+        steps.append(
+            ToolTraceStep(
+                tool_name="plan: " + ", ".join(state.plan.chosen_tools),
+                status="info",
+                token_estimate=None,
+                note=" | ".join(note_parts) or None,
+            )
+        )
+
+    steps.extend(
+        [
         ToolTraceStep(
             tool_name=r.tool_name,
             status=r.status if r.status in ("ok", "overflow", "error") else "ok",
             token_estimate=r.token_estimate,
-            note=r.error,
+            note=r.error
+            or (
+                f"sources={r.source_count}"
+                if r.source_count or r.status in ("empty", "ok")
+                else None
+            ),
         )
         for r in state.tool_calls
-    ]
+        ]
+    )
+    if state.coverage_requirements:
+        satisfied = sum(1 for req in state.coverage_requirements if req.satisfied)
+        steps.append(
+            ToolTraceStep(
+                tool_name=f"coverage: {state.coverage_state}",
+                status="info",
+                token_estimate=None,
+                note=f"{satisfied}/{len(state.coverage_requirements)} requirements satisfied",
+            )
+        )
     return ToolTrace(
         steps=steps,
         total_rounds=state.iteration_count,
@@ -292,12 +329,19 @@ class QAService:
         session_id: uuid.UUID,
         question: str,
         generation_config: GenerationConfig | None = None,
+        selected_document_ids: list[uuid.UUID] | None = None,
     ) -> AgentState:
         """Validate ownership, load history, and build AgentState."""
         # Validate session belongs to chat (raises SessionNotFound if not)
         from app.services import session_service  # noqa: PLC0415
 
         await session_service.get_session_by_id(db, chat_id=chat_id, session_id=session_id)
+        scoped_document_ids = await session_service.lock_document_scope_for_qa(
+            db,
+            chat_id=chat_id,
+            session_id=session_id,
+            requested_document_ids=selected_document_ids,
+        )
 
         history = await _load_history(db, session_id=session_id, chat_id=chat_id)
 
@@ -306,6 +350,7 @@ class QAService:
             session_id=session_id,
             question=question,
             conversation_history=history,
+            scoped_document_ids=scoped_document_ids,
             generation_config=generation_config or GenerationConfig(),
         )
 
@@ -324,6 +369,7 @@ class QAService:
         stop_event: asyncio.Event | None = None,
         include_debug_trace: bool = False,
         generation_config: GenerationConfig | None = None,
+        selected_document_ids: list[uuid.UUID] | None = None,
     ) -> QAResponse:
         """Run the full agent graph synchronously and return a QAResponse.
 
@@ -353,6 +399,7 @@ class QAService:
                 session_id=session_id,
                 question=question,
                 generation_config=generation_config,
+                selected_document_ids=selected_document_ids,
             )
 
         # Build ToolDeps
@@ -397,6 +444,7 @@ class QAService:
 
         # Map citations (enforce chat scope)
         citations = _map_citations(final_state.citations, chat_id=chat_id)
+        debug = _build_tool_trace(final_state)
 
         answer_text = final_state.answer or (
             "There is not enough information in the current chat's documents "
@@ -411,6 +459,7 @@ class QAService:
                 question=question,
                 answer=answer_text,
                 citations=citations,
+                tool_trace=debug,
             )
             await db.commit()
 
@@ -420,7 +469,7 @@ class QAService:
         )
         uncertainty = [e.detail for e in final_state.errors]
         coverage = _compute_coverage(final_state)
-        debug = _build_tool_trace(final_state) if include_debug_trace else None
+        response_debug = debug if include_debug_trace else None
 
         return QAResponse(
             answer=answer_text,
@@ -430,7 +479,7 @@ class QAService:
             uncertainty=uncertainty,
             session_id=session_id,
             message_id=message_id,
-            debug_trace=debug,
+            debug_trace=response_debug,
         )
 
     # ------------------------------------------------------------------
@@ -447,6 +496,7 @@ class QAService:
         budget_manager: ContextBudgetManager | None = None,
         stop_event: asyncio.Event | None = None,
         generation_config: GenerationConfig | None = None,
+        selected_document_ids: list[uuid.UUID] | None = None,
     ) -> AsyncIterator[QAStreamEvent]:
         """Run the agent and yield SSE events.
 
@@ -468,6 +518,7 @@ class QAService:
                     session_id=session_id,
                     question=question,
                     generation_config=generation_config,
+                    selected_document_ids=selected_document_ids,
                 )
         except (ChatNotFound, SessionNotFound) as exc:
             yield QAStreamEvent(
@@ -535,6 +586,7 @@ class QAService:
 
         # Map citations
         citations = _map_citations(final_state.citations, chat_id=chat_id)
+        debug = _build_tool_trace(final_state)
         for cit in citations:
             yield QAStreamEvent(
                 "citation",
@@ -550,6 +602,7 @@ class QAService:
                     question=question,
                     answer=answer_text,
                     citations=citations,
+                    tool_trace=debug,
                 )
                 await db.commit()
         except Exception as exc:  # noqa: BLE001
@@ -571,6 +624,7 @@ class QAService:
             uncertainty=uncertainty,
             session_id=session_id,
             message_id=message_id,
+            debug_trace=debug,
         )
         yield QAStreamEvent("done", _to_json_safe(response.model_dump()))
 

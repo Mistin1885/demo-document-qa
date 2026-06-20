@@ -125,8 +125,10 @@ async def feed_document(
         return FeedReport()
 
     if embedding_provider is not None:
-        # Step 3: batch-embed all chunk texts
-        texts = [chunk.content for chunk in all_chunks]
+        # Step 3: batch-embed all chunk embedding texts. For tables this is
+        # deliberately not the HTML evidence content; it is the caption +
+        # same-page context + natural-language table description.
+        texts = [chunk.embedding_content for chunk in all_chunks]
         vectors = await embedding_provider.embed(texts)
 
         # Step 4: validate embedding dimension

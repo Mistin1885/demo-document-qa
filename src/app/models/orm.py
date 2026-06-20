@@ -191,6 +191,10 @@ class Session(Base):
         nullable=True,
         index=True,
     )
+    selected_document_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
+    """Session-level QA document scope. Null means all chat documents."""
+    document_scope_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    """Locked after the first QA so the right-rail checkbox scope is stable."""
     created_at: Mapped[datetime] = _now_col()
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now(), nullable=False

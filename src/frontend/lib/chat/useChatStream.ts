@@ -82,7 +82,8 @@ function tempId(): string {
 export function useChatStream(
   chatId: string | null,
   sessionId: string | null,
-  defaultOverrides: GenerationOverrides = {}
+  defaultOverrides: GenerationOverrides = {},
+  selectedDocumentIds: string[] = []
 ): UseChatStreamReturn {
   const queryClient = useQueryClient();
 
@@ -174,6 +175,9 @@ export function useChatStream(
       const overrides: GenerationOverrides = {
         ...overridesRef.current,
         ...(perCallOverrides ?? {}),
+        ...(selectedDocumentIds.length > 0
+          ? { selected_document_ids: selectedDocumentIds }
+          : {}),
       };
 
       void (async () => {
@@ -232,6 +236,12 @@ export function useChatStream(
               void queryClient.invalidateQueries({
                 queryKey: queryKeys.messages(chatId, sessionId),
               });
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.sessions(chatId),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: queryKeys.session(chatId, sessionId),
+              });
               // Clear optimistic messages so server history takes over
               setOptimistic([]);
             } else if (evt.kind === "error") {
@@ -272,7 +282,7 @@ export function useChatStream(
         }
       })();
     },
-    [chatId, sessionId, isStreaming, queryClient]
+    [chatId, sessionId, isStreaming, queryClient, selectedDocumentIds]
   );
 
   // Merge server history + optimistic messages
