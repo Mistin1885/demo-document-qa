@@ -254,4 +254,4 @@ Breaking any of these in Phase 4+ should be treated as a defect, not a
 
 If you find yourself needing to bend any of those rules, update
 `CLAUDE.md` first (per `§14` of that file) and record the decision in
-`PROGRESS.md` before touching the post-processor.
+`docs/dev/PROGRESS.md` before touching the post-processor.

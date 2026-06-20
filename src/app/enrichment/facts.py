@@ -19,7 +19,7 @@ Sources
 - Section title context is derived from ``HierarchyResult.nodes`` (section /
   subsection nodes whose ``source_block_ids`` overlap the target block).
 - We do NOT attempt to extract from ``equation_latex`` — MinerU fragments
-  inline math with thousands separators (PROGRESS.md known limitation).
+  inline math with thousands separators (docs/dev/PROGRESS.md known limitation).
 
 Fact kinds
 ----------

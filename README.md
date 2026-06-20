@@ -3,9 +3,10 @@
 A NotebookLM-like multi-document Agentic QA system targeting arXiv research papers. Upload PDFs to a Chat, the system parses + indexes them, and a LangGraph agent answers questions over **that chat's documents only**, with citations back to the original pages.
 
 > Architecture contract: [`CLAUDE.md`](CLAUDE.md) (English, normative).
-> Phased development plan: [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) (zh-Hant).
-> Live progress + decisions: [`PROGRESS.md`](PROGRESS.md) (zh-Hant).
-> Original spec: [`GUIDE.md`](GUIDE.md).
+> Phased development plan: [`docs/dev/DEVELOPMENT_PLAN.md`](docs/dev/DEVELOPMENT_PLAN.md) (zh-Hant).
+> Live progress + decisions: [`docs/dev/PROGRESS.md`](docs/dev/PROGRESS.md) (zh-Hant).
+> Post-Phase-9 enhancement plan: [`docs/dev/IMPROVEMENT_PLAN.md`](docs/dev/IMPROVEMENT_PLAN.md) (zh-Hant).
+> Original spec: [`docs/dev/GUIDE.md`](docs/dev/GUIDE.md).
 > Final delivery report: [`artifacts/final-report.md`](artifacts/final-report.md).
 > Subsystem docs (English):
 > [`docs/01-mineru-setup.md`](docs/01-mineru-setup.md) ·
@@ -65,7 +66,7 @@ Deep QA mode — multi-turn follow-up where the agent resolves "前一個問題�
 ```
 .
 ├── CLAUDE.md                      # architecture contract (English, normative)
-├── DEVELOPMENT_PLAN.md / PROGRESS.md / GUIDE.md
+├── docs/dev/                      # DEVELOPMENT_PLAN / IMPROVEMENT_PLAN / PROGRESS / GUIDE (zh-Hant)
 ├── src/
 │   ├── app/                       # backend (import root = `app`)
 │   │   ├── api/                   # FastAPI routers (thin)
@@ -91,38 +92,10 @@ Backend import root: `app` (under `src/app/`). All Python commands run from repo
 
 ---
 
-## 4. Quick start
+## 4. Quick start (Docker Compose)
 
-### 4.1 Prerequisites
-
-- `uv` ≥ 0.4 — installer: <https://docs.astral.sh/uv/>
-- Docker Engine + Compose v2 (for Vespa + Postgres dev stack)
-- A local MinerU server (uses your own vLLM @ `http://localhost:8001`; see `deploy/mineru/README.md`)
-- Node.js 20+ for the frontend (Next.js 15)
-
-### 4.2 First-time setup
-
-```bash
-uv sync                                          # install Python deps from uv.lock
-docker compose -f deploy/docker-compose.yml up -d postgres vespa
-uv run alembic upgrade head                      # create DB schema
-cp .env.example .env                             # then edit if needed
-uv run uvicorn app.main:app --reload             # http://localhost:8000
-npm --prefix src/frontend install
-npm --prefix src/frontend run dev                # http://localhost:3000
-```
-
-### 4.3 Parse a sample PDF (Phase 1 PoC sanity check)
-
-```bash
-uv run python scripts/ingest_sample_arxiv.py     # downloads a small arXiv paper
-uv run python scripts/mineru_poc.py              # hybrid-http-client → data/parsed/
-```
-
-### 4.4 Containerized startup (full stack via Docker Compose)
-
-The whole stack (Postgres + Vespa + FastAPI backend + Next.js frontend) is
-buildable from `deploy/docker-compose.yml`. Each service has its own image:
+The whole stack (Postgres + Vespa + FastAPI backend + Next.js frontend) runs
+from `deploy/docker-compose.yml`. Each service has its own image:
 
 | Service | Image | Source |
 |---|---|---|
@@ -134,11 +107,10 @@ buildable from `deploy/docker-compose.yml`. Each service has its own image:
 The two app images are published to Docker Hub, so you can either **pull**
 the prebuilt tags or **build locally** — `deploy/docker-compose.yml` uses the
 same image names in both cases (via `${BACKEND_IMAGE:-…}` / `${FRONTEND_IMAGE:-…}`
-interpolation, defaulting to the `v1.0.0` tags above). Override the tag at
-the CLI with `IMAGE_TAG=…` (Makefile) or by exporting `BACKEND_IMAGE` /
-`FRONTEND_IMAGE` before running `docker compose`.
+interpolation, defaulting to the `v1.0.0` tags above). Override at the CLI
+by exporting `BACKEND_IMAGE` / `FRONTEND_IMAGE` before running `docker compose`.
 
-#### Prerequisites
+### 4.1 Prerequisites
 
 - Docker Engine ≥ 24 and Docker Compose v2.
 - A running **MinerU-compatible vLLM** on the host at `http://localhost:8001`
@@ -148,10 +120,9 @@ the CLI with `IMAGE_TAG=…` (Makefile) or by exporting `BACKEND_IMAGE` /
   `LLM_*` env vars (see below). If absent, QA falls back to an extractive,
   evidence-only answer instead of a mock response.
 
-#### Option A — Pull prebuilt images from Docker Hub (no local build)
+### 4.2 Option A — Pull prebuilt images from Docker Hub (no local build)
 
-The fastest path. `docker compose pull` fetches both app images from Docker
-Hub; `postgres` and `vespa` come from their upstream images as usual.
+The fastest path. `postgres` and `vespa` come from their upstream images as usual.
 
 ```bash
 # (one-time) create the external data volumes
@@ -177,7 +148,7 @@ FRONTEND_IMAGE=mistin1885/paper-notebook-agent-frontend:v1.1.0 \
   docker compose -f deploy/docker-compose.yml up -d
 ```
 
-#### Option B — Build locally
+### 4.3 Option B — Build locally
 
 ```bash
 # From repo root (the compose file's build context is the repo root):
@@ -193,22 +164,6 @@ The build produces images tagged
 `mistin1885/paper-notebook-agent-frontend:v1.0.0` — identical to what's on
 Docker Hub — so subsequent `docker compose up` works without changes.
 
-#### Publishing a new version to Docker Hub (maintainers)
-
-```bash
-docker login                                                # once per session
-docker compose -f deploy/docker-compose.yml build backend frontend
-docker push mistin1885/paper-notebook-agent-backend:v1.0.0
-docker push mistin1885/paper-notebook-agent-frontend:v1.0.0
-
-# Bump the tag for subsequent releases, e.g.:
-# BACKEND_IMAGE=mistin1885/paper-notebook-agent-backend:v1.1.0 \
-# FRONTEND_IMAGE=mistin1885/paper-notebook-agent-frontend:v1.1.0 \
-#   docker compose -f deploy/docker-compose.yml build backend frontend
-# docker push mistin1885/paper-notebook-agent-backend:v1.1.0
-# docker push mistin1885/paper-notebook-agent-frontend:v1.1.0
-```
-
 On first start the backend container automatically runs
 `alembic upgrade head` against the `postgres` service before booting Uvicorn.
 Healthchecks gate the start order (`postgres` → `backend` → `frontend`).
@@ -220,7 +175,7 @@ When all four services are healthy:
 - Vespa config / query endpoints: <http://localhost:19072>, <http://localhost:8089>
 - Postgres: `localhost:5433` (user `postgres`, db `paper_notebook`)
 
-#### Configuration (override via shell env or a `.env` next to compose)
+### 4.4 Configuration (override via shell env or a `.env` next to compose)
 
 | Variable | Purpose | Default |
 |---|---|---|
@@ -244,7 +199,7 @@ When all four services are healthy:
 >   docker compose -f deploy/docker-compose.yml build frontend
 > ```
 
-#### One-shot deploy of the Vespa application package
+### 4.5 One-shot deploy of the Vespa application package
 
 The `vespa` container ships empty. After it's healthy, push the schema:
 
@@ -255,7 +210,7 @@ uv run python scripts/deploy_vespa.py --config-url http://localhost:19072
 (You can also run the same script from inside the backend container with
 `docker compose exec backend uv run python scripts/deploy_vespa.py`.)
 
-#### Upload a PDF and ask a question from the UI
+### 4.6 Upload a PDF and ask a question from the UI
 
 Once the stack is up and the Vespa schema deployed:
 
@@ -280,7 +235,7 @@ Once the stack is up and the Vespa schema deployed:
    prepend recent same-session turns to the answer prompt. Full
    behaviour: [`docs/08-deep-qa.md`](docs/08-deep-qa.md).
 
-#### Stop / reset
+### 4.7 Stop / reset
 
 ```bash
 docker compose -f deploy/docker-compose.yml down            # stop, keep data

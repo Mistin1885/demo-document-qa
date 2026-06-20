@@ -72,10 +72,13 @@ Top-level layout deliberately separates **source (`src/`)**, **data (`data/`)**,
 ```
 demo-document-qa/                       # repo root (this directory)
 ├── CLAUDE.md                           # this file (architecture contract)
-├── DEVELOPMENT_PLAN.md                 # phased plan + sub-agent dispatch (zh-Hant)
-├── PROGRESS.md                         # progress tracker, updated every phase (zh-Hant)
-├── GUIDE.md                            # original product spec
 ├── README.md                           # run instructions (kept current from Phase 2)
+├── docs/
+│   └── dev/                            # zh-Hant planning corpus
+│       ├── DEVELOPMENT_PLAN.md         # phased plan + sub-agent dispatch
+│       ├── IMPROVEMENT_PLAN.md         # post-Phase-9 deep-retrieval enhancements
+│       ├── PROGRESS.md                 # progress tracker, updated every phase
+│       └── GUIDE.md                    # original product spec
 ├── Makefile                            # thin wrappers over `uv run` commands
 ├── pyproject.toml / uv.lock            # uv-managed
 ├── .env.example                        # NO real keys
@@ -352,10 +355,13 @@ Mandatory-gate tests (chat isolation, session isolation, hybrid retrieval, citat
 
 ---
 
-## 14. Relationship to PROGRESS.md / DEVELOPMENT_PLAN.md / IMPROVEMENT_PLAN.md
+## 14. Relationship to docs/dev/ (PROGRESS.md / DEVELOPMENT_PLAN.md / IMPROVEMENT_PLAN.md / GUIDE.md)
 
-- `DEVELOPMENT_PLAN.md`: phase breakdown for the initial build (Phases 0–9), sub-agent task cards, dependencies, acceptance. Execute top-down from it.
-- `IMPROVEMENT_PLAN.md`: post-Phase-9 deep-retrieval enhancement plan (Phases A–E) covering gap-retrieval fixes, query decomposition, **bounded LLM-driven replan**, embedding-based coverage, and Golden-QA re-scoring. Read it before touching `src/app/agent/` or `src/app/retrieval/` for anything beyond bug fixes. Phase C in that doc explicitly amends §8 of this file (`MAX_REPLAN_ROUNDS`, `llm_replan` node) — do **not** start C.1/C.2 implementation until C.0 has applied the §8 patch.
-- `PROGRESS.md`: live status per phase / sub-agent task, decisions, blockers, goal score. **Update immediately after each task or repair-loop iteration.**
+All four live under `docs/dev/`:
+
+- `docs/dev/DEVELOPMENT_PLAN.md`: phase breakdown for the initial build (Phases 0–9), sub-agent task cards, dependencies, acceptance. Execute top-down from it.
+- `docs/dev/IMPROVEMENT_PLAN.md`: post-Phase-9 deep-retrieval enhancement plan (Phases A–E) covering gap-retrieval fixes, query decomposition, **bounded LLM-driven replan**, embedding-based coverage, and Golden-QA re-scoring. Read it before touching `src/app/agent/` or `src/app/retrieval/` for anything beyond bug fixes. Phase C in that doc explicitly amends §8 of this file (`MAX_REPLAN_ROUNDS`, `llm_replan` node) — do **not** start C.1/C.2 implementation until C.0 has applied the §8 patch.
+- `docs/dev/PROGRESS.md`: live status per phase / sub-agent task, decisions, blockers, goal score. **Update immediately after each task or repair-loop iteration.**
+- `docs/dev/GUIDE.md`: original product spec.
 - On conflict among the four, **CLAUDE.md wins**; when a spec conflict appears, update CLAUDE.md first, then continue.
-- Language convention: **CLAUDE.md is English; DEVELOPMENT_PLAN.md / IMPROVEMENT_PLAN.md / PROGRESS.md are Traditional Chinese.**
+- Language convention: **CLAUDE.md is English; the four documents under `docs/dev/` are Traditional Chinese.**
