@@ -21,6 +21,7 @@ from app.agent.tools._models import (
     AggregateSourcesParams,
     ExpandEvidenceParams,
     FetchStructuralNodesParams,
+    GrepDocumentChunksParams,
     InspectChatParams,
     InspectDocumentParams,
     QueryStructuredFactsParams,
@@ -29,6 +30,7 @@ from app.agent.tools._models import (
 from app.agent.tools.aggregate_sources import aggregate_sources
 from app.agent.tools.expand_evidence import expand_evidence
 from app.agent.tools.fetch_structural_nodes import fetch_structural_nodes
+from app.agent.tools.grep_document_chunks import grep_document_chunks
 from app.agent.tools.inspect_chat import inspect_chat
 from app.agent.tools.inspect_document import inspect_document
 from app.agent.tools.query_structured_facts import query_structured_facts
@@ -86,6 +88,16 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         ),
         callable=fetch_structural_nodes,
     ),
+    "grep_document_chunks": ToolSpec(
+        name="grep_document_chunks",
+        params_model=GrepDocumentChunksParams,
+        description=(
+            "Deterministically scan chat-scoped stored document chunks, HTML tables, "
+            "figure captions, and equations with lexical grep. Use alongside "
+            "search_hybrid when exact Figure/Table labels or literal formulas matter."
+        ),
+        callable=grep_document_chunks,
+    ),
     "search_hybrid": ToolSpec(
         name="search_hybrid",
         params_model=SearchHybridParams,
@@ -134,6 +146,7 @@ __all__ = [
     "aggregate_sources",
     "expand_evidence",
     "fetch_structural_nodes",
+    "grep_document_chunks",
     "inspect_chat",
     "inspect_document",
     "query_structured_facts",
@@ -142,6 +155,7 @@ __all__ = [
     "AggregateSourcesParams",
     "ExpandEvidenceParams",
     "FetchStructuralNodesParams",
+    "GrepDocumentChunksParams",
     "InspectChatParams",
     "InspectDocumentParams",
     "QueryStructuredFactsParams",

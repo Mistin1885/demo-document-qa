@@ -129,6 +129,29 @@ def _audit_specialized_coverage(state: AgentState) -> CoverageRequirement | None
     rationale = state.plan.rationale.lower()
     texts = _workspace_texts(state)
     lowered = [text.lower() for text in texts]
+    question_lower = state.question.lower()
+
+    figure_match = re.search(r"\bfigure\s+(\d+)\b", question_lower)
+    if figure_match is not None:
+        label = f"figure {figure_match.group(1)}"
+        has_exact_figure = any(label in text for text in lowered)
+        if not has_exact_figure:
+            return CoverageRequirement(
+                requirement_id=f"audit-{label.replace(' ', '-')}",
+                description=f"literal evidence for {label} from figure caption or adjacent chunk",
+            )
+
+    table_match = re.search(r"\btable\s+(\d+)\b", question_lower)
+    if table_match is not None:
+        label = f"table {table_match.group(1)}"
+        has_exact_table = any(label in text for text in lowered)
+        wants_html = "<table" in question_lower or "comparison table" in question_lower or "reproduce" in question_lower
+        has_html = any("<table" in text for text in lowered)
+        if not has_exact_table or (wants_html and not has_html):
+            return CoverageRequirement(
+                requirement_id=f"audit-{label.replace(' ', '-')}",
+                description=f"literal HTML or chunk evidence for {label}",
+            )
 
     if "comparison question" in rationale:
         targets = _comparison_targets_from_question(state.plan.goal)
@@ -168,6 +191,15 @@ def _score_requirement(requirement: str, content: str, vector_score: float | Non
     """
     req_lower = requirement.lower()
     content_lower = content.lower()
+
+    label_match = re.search(r"\b(figure|table)\s+(\d+)\b", req_lower)
+    if label_match is not None:
+        exact_label = f"{label_match.group(1)} {label_match.group(2)}"
+        if exact_label in content_lower:
+            if label_match.group(1) == "table" and "html" in req_lower and "<table" not in content_lower:
+                return 0.0
+            return 1.0
+        return 0.0
 
     comparison_targets = _comparison_targets_from_requirement(requirement)
     if comparison_targets is not None:

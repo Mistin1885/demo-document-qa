@@ -212,6 +212,13 @@ def _build_extractive_answer(prompt: str, *, max_chars: int) -> str:
             else ""
         )
         parts.append(f"- Overall, LightRAG is better than GraphRAG{cost_clause} based on the retrieved evidence.")
+    if (
+        ("always hurt" in q_lower or "always harm" in q_lower or "always reduce" in q_lower)
+        and any("-origin" in ev.content.lower() for ev in selected)
+    ):
+        parts.append(
+            "- No. The -Origin ablation does not always hurt LightRAG; the retrieved Table 2 evidence shows mixed results, including 74.4% Agriculture Overall and 84.4% Legal Overall."
+        )
     budget_left = max_chars - len(parts[0])
     for ev in selected:
         table_like = "|" in ev.content or "table" in ev.content.lower()

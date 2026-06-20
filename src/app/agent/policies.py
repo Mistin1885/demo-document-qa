@@ -350,6 +350,7 @@ class PolicyEngine:
         """
         allowed = {
             "search_hybrid",
+            "grep_document_chunks",
             "fetch_structural_nodes",
             "query_structured_facts",
             "inspect_document",

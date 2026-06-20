@@ -81,6 +81,13 @@ _ABLATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"消融"),
 )
 
+_TABLE_FIGURE_FORMULA_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\btable\s+\d+\b", re.IGNORECASE),
+    re.compile(r"\bfigure\s+\d+\b", re.IGNORECASE),
+    re.compile(r"\bfig\.\s*\d+\b", re.IGNORECASE),
+    re.compile(r"\bformula\b|\bequation\b|\bexpression\b|公式", re.IGNORECASE),
+)
+
 
 def _tokenize(text: str) -> set[str]:
     """Return a set of lowercase tokens from *text*."""
@@ -105,6 +112,24 @@ def _is_comparison_question(question: str) -> bool:
 def _is_ablation_question(question: str) -> bool:
     """Return True for ablation / with-vs-without style questions."""
     return any(pattern.search(question) for pattern in _ABLATION_PATTERNS)
+
+
+def _needs_literal_chunk_scan(question: str) -> bool:
+    """Return True when exact labels, HTML tables, or literal formulas matter."""
+    q_lower = question.lower()
+    return any(pattern.search(question) for pattern in _TABLE_FIGURE_FORMULA_PATTERNS) or any(
+        marker in q_lower
+        for marker in (
+            "<table",
+            "html",
+            "win rate",
+            "win rates",
+            "cost comparison",
+            "api call",
+            "token",
+            "tokens",
+        )
+    )
 
 
 _ENTITY_RE = r"([A-Za-z][A-Za-z0-9_.+-]{1,80})"
@@ -196,7 +221,7 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
     fact_filter_hints = FactFilterHints()
 
     if summary_path:
-        chosen_tools = ["inspect_chat", "fetch_structural_nodes", "search_hybrid"]
+        chosen_tools = ["inspect_chat", "fetch_structural_nodes", "grep_document_chunks", "search_hybrid"]
         # Add inspect_document for each known document
         if state.document_manifests:
             chosen_tools.append("inspect_document")
@@ -213,7 +238,7 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
         ]
         rationale = "summary/overview question: using structural fetch-all path plus broad hybrid evidence"
     elif comparison_path:
-        chosen_tools = ["search_hybrid"]
+        chosen_tools = ["grep_document_chunks", "search_hybrid"]
         gap_queries = _comparison_gap_queries(question)
         targets = _extract_comparison_targets(question)
         if targets is not None:
@@ -232,7 +257,7 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
             ]
         rationale = "comparison question: decomposed into method-specific hybrid searches"
     elif numeric_path or ablation_path:
-        chosen_tools = ["query_structured_facts", "search_hybrid"]
+        chosen_tools = ["query_structured_facts", "grep_document_chunks", "search_hybrid"]
         information_needs = [
             "structured numeric facts (benchmarks, metrics, datasets)",
             "contextual evidence for numbers",
@@ -259,9 +284,9 @@ async def plan_information_needs(state: AgentState) -> dict[str, Any]:
             ]
             rationale = "ablation question: facts filter plus ablation-specific hybrid searches"
     else:
-        chosen_tools = ["search_hybrid"]
+        chosen_tools = ["grep_document_chunks", "search_hybrid"] if _needs_literal_chunk_scan(question) else ["search_hybrid", "grep_document_chunks"]
         information_needs = ["relevant content for: " + question]
-        rationale = "general question: hybrid retrieval"
+        rationale = "general question: balanced hybrid retrieval and deterministic chunk scan"
 
     plan = AgentPlan(
         goal=question,
@@ -304,4 +329,5 @@ __all__ = [
     "_is_numeric_question",
     "_is_comparison_question",
     "_is_ablation_question",
+    "_needs_literal_chunk_scan",
 ]

@@ -7,6 +7,7 @@ calls (different query strings → different fingerprints → not deduplicated).
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.agent.state import AgentPlan, AgentState
@@ -32,6 +33,8 @@ async def plan_gap_retrieval(state: AgentState, deps: Any) -> dict[str, Any]:
     updated_needs = list(state.plan.information_needs) + gap_queries
 
     updated_tools = list(state.plan.chosen_tools)
+    if _should_try_grep_first(gap_queries) and "grep_document_chunks" not in updated_tools:
+        updated_tools.append("grep_document_chunks")
     if "search_hybrid" not in updated_tools:
         updated_tools.append("search_hybrid")
 
@@ -44,6 +47,7 @@ async def plan_gap_retrieval(state: AgentState, deps: Any) -> dict[str, Any]:
         chosen_tools=updated_tools,
         rationale=updated_rationale,
         gap_queries=gap_queries,
+        fact_filter_hints=state.plan.fact_filter_hints,
     )
 
     state.record_event(
@@ -61,3 +65,28 @@ async def plan_gap_retrieval(state: AgentState, deps: Any) -> dict[str, Any]:
 
 
 __all__ = ["plan_gap_retrieval"]
+
+
+def _should_try_grep_first(gap_queries: list[str]) -> bool:
+    """Return True when gaps are likely due to literal chunk/table/figure misses."""
+    text = " ".join(gap_queries).lower()
+    return bool(
+        re.search(r"\b(?:figure|table)\s+\d+\b", text)
+        or any(
+            marker in text
+            for marker in (
+                "html",
+                "<table",
+                "row",
+                "column",
+                "formula",
+                "equation",
+                "expression",
+                "literal",
+                "exact",
+                "ablation",
+                "api",
+                "token",
+            )
+        )
+    )

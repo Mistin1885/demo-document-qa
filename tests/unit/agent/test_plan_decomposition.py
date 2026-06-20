@@ -22,7 +22,7 @@ def _state(question: str) -> AgentState:
 async def test_comparison_question_decomposes_into_subqueries() -> None:
     result = await plan_information_needs(_state("Compare LightRAG with GraphRAG."))
     plan = result["plan"]
-    assert plan.chosen_tools == ["search_hybrid"]
+    assert plan.chosen_tools == ["grep_document_chunks", "search_hybrid"]
     assert {"LightRAG", "GraphRAG"}.issubset(set(plan.gap_queries))
     assert "LightRAG GraphRAG differences" in plan.gap_queries
 

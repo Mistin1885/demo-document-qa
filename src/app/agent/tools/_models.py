@@ -93,6 +93,31 @@ class SearchHybridParams(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# grep_document_chunks
+# ---------------------------------------------------------------------------
+
+
+class GrepDocumentChunksParams(BaseModel):
+    """Parameters for deterministic chunk grep over stored DocumentNode rows.
+
+    No chat_id — injected from AgentState.  This tool complements
+    ``search_hybrid`` by directly scanning literal chunk/table/figure/equation
+    text when exact labels or HTML tables matter.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(..., min_length=1)
+    document_ids: list[uuid.UUID] | None = None
+    source_types: list[str] | None = None
+    required_terms: list[str] = Field(default_factory=list, max_length=12)
+    include_html: bool = False
+    scan_limit: int = Field(default=500, ge=1, le=5_000)
+    limit: int = Field(default=8, ge=1, le=50)
+    max_tokens: int = Field(default=6_000, ge=1)
+
+
+# ---------------------------------------------------------------------------
 # query_structured_facts
 # ---------------------------------------------------------------------------
 
@@ -157,6 +182,7 @@ __all__ = [
     "AggregateSourcesParams",
     "ExpandEvidenceParams",
     "FetchStructuralNodesParams",
+    "GrepDocumentChunksParams",
     "InspectChatParams",
     "InspectDocumentParams",
     "QueryStructuredFactsParams",

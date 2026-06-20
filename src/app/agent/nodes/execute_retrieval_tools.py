@@ -18,6 +18,7 @@ PolicyEngine.enforce_post_retrieval in this node.
 from __future__ import annotations
 
 import uuid
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.agent.policies import PolicyEngine
@@ -26,6 +27,7 @@ from app.agent.tools import (
     TOOL_REGISTRY,
     AggregateSourcesParams,
     FetchStructuralNodesParams,
+    GrepDocumentChunksParams,
     InspectChatParams,
     InspectDocumentParams,
     QueryStructuredFactsParams,
@@ -64,6 +66,54 @@ def _search_params(state: AgentState, query: str, *, preset: str) -> SearchHybri
     return SearchHybridParams(query=query, document_ids=_document_scope(state), preset=preset)
 
 
+def _extract_required_terms(query: str) -> list[str]:
+    """Extract exact labels / numeric tokens that grep should preserve."""
+    terms: list[str] = []
+    for match in re.finditer(
+        r"\b(?:Figure|Table)\s+\d+\b|\b\d+(?:,\d{3})*(?:\.\d+)?%?\b|-[A-Za-z]+",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        value = match.group(0)
+        if value.lower() not in {t.lower() for t in terms}:
+            terms.append(value)
+    return terms[:12]
+
+
+def _grep_source_types(query: str) -> list[str] | None:
+    q_lower = query.lower()
+    source_types: list[str] = []
+    if "figure" in q_lower or "fig." in q_lower:
+        source_types.append("figure_caption")
+    if "table" in q_lower or "<table" in q_lower or "win rate" in q_lower:
+        source_types.append("table_record")
+    if any(marker in q_lower for marker in ("formula", "equation", "expression")):
+        source_types.extend(["raw_block", "equation"])
+    if any(marker in q_lower for marker in ("ablation", "performance", "score", "overall", "cost", "token", "api")):
+        source_types.extend(["table_record", "performance_fact", "raw_block"])
+    # Preserve order while de-duping.
+    deduped = list(dict.fromkeys(source_types))
+    return deduped or None
+
+
+def _grep_params(state: AgentState, query: str) -> GrepDocumentChunksParams:
+    q_lower = query.lower()
+    include_html = any(
+        marker in q_lower
+        for marker in ("table", "<table", "html", "win rate", "rows", "columns", "ablation")
+    )
+    return GrepDocumentChunksParams(
+        query=query,
+        document_ids=_document_scope(state),
+        source_types=_grep_source_types(query),
+        required_terms=_extract_required_terms(query),
+        include_html=include_html,
+        scan_limit=1_000 if state.generation_config.deep_qa_mode else 500,
+        limit=12 if state.generation_config.deep_qa_mode else 8,
+        max_tokens=10_000 if state.generation_config.deep_qa_mode else 6_000,
+    )
+
+
 def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
     """Expand plan.chosen_tools into a flat list of (tool_name, params) pairs.
 
@@ -83,6 +133,8 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                     request.tool,
                     _search_params(state, request.query, preset="broad"),
                 ))
+            elif request.tool == "grep_document_chunks" and request.query:
+                replan_invocations.append((request.tool, _grep_params(state, request.query)))
             elif request.tool == "fetch_structural_nodes":
                 replan_invocations.append((
                     request.tool,
@@ -173,6 +225,11 @@ def _plan_to_invocations(state: AgentState) -> list[tuple[str, Any]]:
                         tool_name,
                         _search_params(state, state.plan.goal, preset=preset),
                     ))
+
+        elif tool_name == "grep_document_chunks":
+            grep_queries = remaining_gaps or [state.plan.goal]
+            for gap_q in grep_queries:
+                invocations.append((tool_name, _grep_params(state, gap_q)))
 
         elif tool_name == "query_structured_facts":
             hints = state.plan.fact_filter_hints

@@ -11,13 +11,44 @@ No tool calls; no network I/O.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.agent.state import AgentState, EvidenceItem
 
 
-def _sort_key(ev: EvidenceItem) -> tuple[str, int, float]:
-    return (str(ev.document_id), ev.page_start, -(ev.score or 0.0))
+def _label_priority(question: str, ev: EvidenceItem) -> int:
+    """Prioritise evidence with the exact Figure/Table label from the question."""
+    label_match = re.search(r"\b(figure|table)\s+(\d+)\b", question, flags=re.IGNORECASE)
+    if label_match is None:
+        return 0
+    wanted = f"{label_match.group(1)} {label_match.group(2)}".lower()
+    content = ev.content.lower()
+    if wanted in content:
+        return -3
+    if label_match.group(1).lower() in content:
+        # Same modality but wrong label (e.g. Figure 1 for a Figure 2 question)
+        # should not appear before an exact-label direct chunk.
+        return 3
+    return 1
+
+
+def _origin_priority(ev: EvidenceItem) -> int:
+    if ev.origin_tool == "grep_document_chunks":
+        return 0
+    if ev.source_type in {"table", "figure", "equation", "table_record", "figure_caption"}:
+        return 1
+    return 2
+
+
+def _sort_key(ev: EvidenceItem, question: str) -> tuple[int, int, str, int, float]:
+    return (
+        _label_priority(question, ev),
+        _origin_priority(ev),
+        str(ev.document_id),
+        ev.page_start,
+        -(ev.score or 0.0),
+    )
 
 
 async def merge_evidence_workspace(state: AgentState) -> dict[str, Any]:
@@ -31,7 +62,7 @@ async def merge_evidence_workspace(state: AgentState) -> dict[str, Any]:
             seen.add(ev.evidence_id)
             unique.append(ev)
 
-    sorted_evidence = sorted(unique, key=_sort_key)
+    sorted_evidence = sorted(unique, key=lambda ev: _sort_key(ev, state.question))
 
     state.record_event(
         "node_exit",

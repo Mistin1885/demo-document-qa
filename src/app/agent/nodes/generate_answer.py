@@ -23,6 +23,7 @@ If evidence_items is empty, returns the "no information" fallback answer
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.agent.policies import PolicyEngine, PolicyViolation
@@ -48,6 +49,49 @@ Do NOT use your own knowledge; rely exclusively on the evidence provided.
 """
 
 
+def _filtered_evidence_items(state: AgentState) -> list[Any]:
+    """Return evidence items with obvious wrong Figure/Table labels removed.
+
+    If a question explicitly asks for ``Figure 2`` and the workspace contains
+    exact Figure 2 evidence, same-modality evidence for Figure 1/3/etc. is more
+    likely to confuse answer synthesis than help.  The same applies to Table N,
+    especially for HTML table QA.
+    """
+    items = list(state.evidence_items)
+    label_match = re.search(r"\b(figure|table)\s+(\d+)\b", state.question, flags=re.IGNORECASE)
+    if label_match is None:
+        return items
+    modality = label_match.group(1).lower()
+    wanted = f"{modality} {label_match.group(2)}"
+    has_exact = any(wanted in ev.content.lower() for ev in items)
+    if not has_exact:
+        return items
+    label_re = re.compile(rf"\b{modality}\s+\d+\b", flags=re.IGNORECASE)
+    filtered = [
+        ev
+        for ev in items
+        if not (label_re.search(ev.content) and wanted not in ev.content.lower())
+    ]
+    if modality == "figure":
+        # A Figure question may need an adjacent unlabeled table (e.g. Figure 2
+        # cost grid), but an explicitly different Table N is almost always
+        # contamination from broad retrieval.
+        table_label_re = re.compile(r"\btable\s+\d+\b", flags=re.IGNORECASE)
+        filtered = [
+            ev
+            for ev in filtered
+            if not (table_label_re.search(ev.content) and wanted not in ev.content.lower())
+        ]
+    elif modality == "table":
+        figure_label_re = re.compile(r"\bfigure\s+\d+\b", flags=re.IGNORECASE)
+        filtered = [
+            ev
+            for ev in filtered
+            if not (figure_label_re.search(ev.content) and wanted not in ev.content.lower())
+        ]
+    return filtered or items
+
+
 def _build_context_block(state: AgentState) -> str:
     """Build a formatted context block from evidence items and structured facts."""
     if not state.evidence_items and not state.structured_facts:
@@ -59,7 +103,7 @@ def _build_context_block(state: AgentState) -> str:
         manifest_summary = f"Documents in this chat: {titles}\n\n"
 
     lines: list[str] = [manifest_summary + "Evidence excerpts:"]
-    for idx, ev in enumerate(state.evidence_items, start=1):
+    for idx, ev in enumerate(_filtered_evidence_items(state), start=1):
         doc_title = ev.section_title or f"doc:{ev.document_id}"
         lines.append(f"[c{idx}] (page {ev.page_start}–{ev.page_end}, {doc_title})\n{ev.content}")
     if state.structured_facts:

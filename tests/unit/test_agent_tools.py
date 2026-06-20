@@ -359,16 +359,17 @@ async def test_overflow_status_on_large_evidence() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 10: TOOL_REGISTRY has exactly 7 entries
+# Test 10: TOOL_REGISTRY contains all retrieval and support tools
 # ---------------------------------------------------------------------------
 
 
 def test_tool_registry_size() -> None:
-    assert len(TOOL_REGISTRY) == 7
+    assert len(TOOL_REGISTRY) == 8
     expected = {
         "inspect_chat",
         "inspect_document",
         "fetch_structural_nodes",
+        "grep_document_chunks",
         "search_hybrid",
         "query_structured_facts",
         "aggregate_sources",

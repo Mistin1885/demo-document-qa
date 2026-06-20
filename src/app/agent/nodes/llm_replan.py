@@ -58,6 +58,7 @@ class ReplanToolCall(BaseModel):
 
     tool: Literal[
         "search_hybrid",
+        "grep_document_chunks",
         "fetch_structural_nodes",
         "query_structured_facts",
         "inspect_document",
@@ -82,9 +83,10 @@ _SYSTEM_PROMPT = """\
 You are a bounded retrieval planner for a document QA StateGraph.
 Return JSON only, with keys: action, tool_calls, reasoning.
 Allowed action: search_more, answer_now, no_info.
-Allowed tools: search_hybrid, fetch_structural_nodes, query_structured_facts, inspect_document.
+Allowed tools: search_hybrid, grep_document_chunks, fetch_structural_nodes, query_structured_facts, inspect_document.
 Do not include chat_id, session_id, SQL, URLs, or tools outside the allowed set.
-Prefer 1-3 targeted search_hybrid queries when evidence is missing.
+Prefer 1-3 targeted retrieval calls when evidence is missing. Use grep_document_chunks
+for exact Figure/Table labels, HTML tables, literal formulas, and chunk-level text.
 """
 
 
