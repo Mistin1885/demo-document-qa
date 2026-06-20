@@ -231,12 +231,21 @@ the post-processor. The PoC and Phase 4 mapping must read from
 
 ## 8. LangGraph Agent
 
-Explicit **StateGraph**, not an unbounded ReAct loop. Workflow:
+Explicit **StateGraph**; bounded LLM-driven replanning is permitted only through
+a dedicated `llm_replan` node. That node emits schema-validated next-tool
+requests (`extra="forbid"` Pydantic models) and the graph never grants the LLM
+free-form tool execution. Every nomination is dispatched by
+`execute_retrieval_tools` under the existing PolicyEngine. Round cap:
+`MAX_REPLAN_ROUNDS = 3` (configurable per request but hard-capped in
+`agent.budget`). `chat_id` is still injected by the service layer and never
+flows through the LLM. Workflow:
 ```
 load_chat_and_session → inspect_scope → plan_information_needs → enforce_scope_and_policies
 → execute_retrieval_tools → merge_evidence_workspace → check_context_budget
    (overflow → aggregate_sources)
 → check_coverage (incomplete → plan_gap_retrieval → execute_retrieval_tools)
+   (still incomplete and replan_rounds < MAX_REPLAN_ROUNDS → llm_replan
+    → execute_retrieval_tools → merge_evidence_workspace → check_context_budget)
 → verify_critical_claims → generate_answer → validate_citations
 → validate_scope_isolation → persist_messages → END
 ```
@@ -244,9 +253,11 @@ load_chat_and_session → inspect_scope → plan_information_needs → enforce_s
 **Tools (map to data capabilities, not to fixed user questions):** `inspect_chat, inspect_document, fetch_structural_nodes, search_hybrid, query_structured_facts, aggregate_sources, expand_evidence`.
 - `chat_id` for all tools is injected from `AgentState`; the LLM cannot pass it.
 - `query_structured_facts` may only emit a restricted filter schema; **never raw SQL.**
+- `llm_replan` cannot invent tool names, pass `chat_id`, or bypass the
+  restricted `query_structured_facts` filter schema.
 - Every tool result carries `status` (incl. `overflow`), token estimate, sources; on overflow do not truncate — aggregate.
 
-**Code-enforced policies (NOT just prompt) — GUIDE §13.2 (14 rules).** Key: restrict to chat_id; no cross-Session reads; summaries use fetch-all; numbers prefer facts; results pass rerank; do not answer on incomplete coverage; citations all belong to current chat; provider failure returns an explicit error, no silent model switching.
+**Code-enforced policies (NOT just prompt) — GUIDE §13.2 (15 rules).** Key: restrict to chat_id; no cross-Session reads; summaries use fetch-all; numbers prefer facts; results pass rerank; do not answer on incomplete coverage; citations all belong to current chat; provider failure returns an explicit error, no silent model switching; Replan LLM cannot bypass chat isolation or tool schemas.
 
 **ContextBudget:** default context 10,000 tokens (actual from provider profile `context_window`); allocation per GUIDE §14. When a provider tokenizer is unavailable, approximate with tiktoken and mark `token_count_is_estimate=true` in the debug trace. Fixed max tool rounds; never repeat the same tool with the same params.
 

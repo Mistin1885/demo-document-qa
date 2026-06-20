@@ -226,3 +226,9 @@
 | 前端 build | `npm --prefix src/frontend run build` | ✅ | 2026-06-18 — `/`、`/settings` 兩條 static route |
 | 前端 test | `npm --prefix src/frontend run test` | ✅ | 2026-06-18 — 27 passed / 5 files，每檔 ≤10 |
 | 前端 smoke（dev server） | `npm --prefix src/frontend run dev` + `curl http://localhost:3000/` | ✅ | 2026-06-18 — port 3000 占用 → fallback 3002；`/` 三 region + `/settings` 渲染含 Chat/Embedding/Reranker/Chat defaults |
+
+## IMPROVEMENT Phase C — 契約更新
+
+- Updated `CLAUDE.md` §8 to allow a bounded `llm_replan` StateGraph node only through schema-validated tool nominations.
+- Added hard cap `MAX_REPLAN_ROUNDS = 3`; `chat_id` remains service-injected and never LLM-controlled.
+- Expanded code-enforced policy count to include replan schema/isolation enforcement.
