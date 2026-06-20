@@ -9,11 +9,27 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG introduces a graph-based retrieval-augmented generation framework that fuses entity-level and relation-level evidence to answer multi-hop questions over arXiv papers.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
-        {"chat_label": "A", "doc_label": "paper_a", "content": "The contributions include a dual-level retrieval mechanism, a graph indexer, and an incremental update protocol.", "page_start": 2, "page_end": 2, "source_type": "compact_section_summary"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "LightRAG introduces a graph-based retrieval-augmented generation framework that fuses entity-level and relation-level evidence to answer multi-hop questions over arXiv papers.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "section_summary"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The contributions include a dual-level retrieval mechanism, a graph indexer, and an incremental update protocol.",
+          "page_start": 2,
+          "page_end": 2,
+          "source_type": "compact_section_summary"
+        }
       ],
       "expected": {
-        "required_citation_doc_labels": ["paper_a"],
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
         "forbidden_citation_doc_labels": [],
         "no_answer_phrase_required": false,
         "min_documents_used": 1,
@@ -27,11 +43,27 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "The method first extracts entities and relations from each chunk, then constructs a graph index over the corpus.", "page_start": 3, "page_end": 3, "source_type": "chunk"},
-        {"chat_label": "A", "doc_label": "paper_a", "content": "At query time the system performs dual-level retrieval: low-level for entity facts and high-level for relational paths.", "page_start": 4, "page_end": 4, "source_type": "chunk"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The method first extracts entities and relations from each chunk, then constructs a graph index over the corpus.",
+          "page_start": 3,
+          "page_end": 3,
+          "source_type": "chunk"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "At query time the system performs dual-level retrieval: low-level for entity facts and high-level for relational paths.",
+          "page_start": 4,
+          "page_end": 4,
+          "source_type": "chunk"
+        }
       ],
       "expected": {
-        "required_citation_doc_labels": ["paper_a"],
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
         "forbidden_citation_doc_labels": [],
         "no_answer_phrase_required": false,
         "min_documents_used": 1,
@@ -45,11 +77,27 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG outperforms NaiveRAG on multi-hop benchmarks by leveraging graph-based context expansion.", "page_start": 5, "page_end": 5, "source_type": "claim"},
-        {"chat_label": "A", "doc_label": "paper_a", "content": "Naive RAG retrieves top-k chunks with BM25 and does not exploit relational structure between entities.", "page_start": 6, "page_end": 6, "source_type": "definition"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "LightRAG outperforms NaiveRAG on multi-hop benchmarks by leveraging graph-based context expansion.",
+          "page_start": 5,
+          "page_end": 5,
+          "source_type": "claim"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Naive RAG retrieves top-k chunks with BM25 and does not exploit relational structure between entities.",
+          "page_start": 6,
+          "page_end": 6,
+          "source_type": "definition"
+        }
       ],
       "expected": {
-        "required_citation_doc_labels": ["paper_a"],
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
         "forbidden_citation_doc_labels": [],
         "no_answer_phrase_required": false,
         "min_documents_used": 1,
@@ -63,11 +111,27 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "On the MultiHopQA benchmark LightRAG achieves 73.4 F1 versus 61.0 F1 for NaiveRAG with the same embedding model.", "page_start": 7, "page_end": 7, "source_type": "performance_fact"},
-        {"chat_label": "A", "doc_label": "paper_a", "content": "The experimental setting uses 1000 queries, top-k=12, and identical chunking parameters for all baselines.", "page_start": 7, "page_end": 7, "source_type": "table_record"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "On the MultiHopQA benchmark LightRAG achieves 73.4 F1 versus 61.0 F1 for NaiveRAG with the same embedding model.",
+          "page_start": 7,
+          "page_end": 7,
+          "source_type": "performance_fact"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The experimental setting uses 1000 queries, top-k=12, and identical chunking parameters for all baselines.",
+          "page_start": 7,
+          "page_end": 7,
+          "source_type": "table_record"
+        }
       ],
       "expected": {
-        "required_citation_doc_labels": ["paper_a"],
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
         "forbidden_citation_doc_labels": [],
         "no_answer_phrase_required": false,
         "min_documents_used": 1,
@@ -81,12 +145,37 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "Paper A uses graph-based dual-level retrieval over entity and relation nodes.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
-        {"chat_label": "A", "doc_label": "paper_b", "content": "Paper B relies on dense vector retrieval with a cross-encoder reranker for the top 30 candidates.", "page_start": 1, "page_end": 1, "source_type": "section_summary"},
-        {"chat_label": "A", "doc_label": "paper_c", "content": "Paper C combines BM25 with neural query expansion and applies reciprocal rank fusion across retrievers.", "page_start": 1, "page_end": 1, "source_type": "section_summary"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Paper A uses graph-based dual-level retrieval over entity and relation nodes.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "section_summary"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_b",
+          "content": "Paper B relies on dense vector retrieval with a cross-encoder reranker for the top 30 candidates.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "section_summary"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_c",
+          "content": "Paper C combines BM25 with neural query expansion and applies reciprocal rank fusion across retrievers.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "section_summary"
+        }
       ],
       "expected": {
-        "required_citation_doc_labels": ["paper_a", "paper_b", "paper_c"],
+        "required_citation_doc_labels": [
+          "paper_a",
+          "paper_b",
+          "paper_c"
+        ],
         "forbidden_citation_doc_labels": [],
         "no_answer_phrase_required": false,
         "min_documents_used": 3,
@@ -100,11 +189,20 @@
       "target_chat_label": "A",
       "target_session_label": "1",
       "seeded_hits": [
-        {"chat_label": "B", "doc_label": "paper_b", "content": "Paper B introduces a unique evaluation protocol named QPro that scores answers on temporal consistency.", "page_start": 9, "page_end": 9, "source_type": "claim"}
+        {
+          "chat_label": "B",
+          "doc_label": "paper_b",
+          "content": "Paper B introduces a unique evaluation protocol named QPro that scores answers on temporal consistency.",
+          "page_start": 9,
+          "page_end": 9,
+          "source_type": "claim"
+        }
       ],
       "expected": {
         "required_citation_doc_labels": [],
-        "forbidden_citation_doc_labels": ["paper_b"],
+        "forbidden_citation_doc_labels": [
+          "paper_b"
+        ],
         "no_answer_phrase_required": true,
         "min_documents_used": 0,
         "max_documents_used": 0
@@ -117,7 +215,14 @@
       "target_chat_label": "A",
       "target_session_label": "2",
       "seeded_hits": [
-        {"chat_label": "A", "doc_label": "paper_a", "content": "LightRAG framework overview seeded from another session.", "page_start": 1, "page_end": 1, "source_type": "chunk"}
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "LightRAG framework overview seeded from another session.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "chunk"
+        }
       ],
       "expected": {
         "required_citation_doc_labels": [],
@@ -127,6 +232,210 @@
         "max_documents_used": 1
       },
       "runner_note": "Session-history isolation is covered structurally by tests/e2e/test_session_isolation_e2e.py. The runner here verifies the graph still answers a meta-question without leaking citations from sibling sessions — AgentState is built with empty conversation_history, so even though doc A is in scope the meta question may either match the seeded hit or fall back to no-info; both outcomes are acceptable here (max 1 citation)."
+    },
+    {
+      "case_id": "q1_summary_this_document_lightrag",
+      "kind": "global_summary",
+      "question": "Summary this document.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "LightRAG is a retrieval-augmented generation framework that builds a graph index from entity and relation information across the document.",
+          "page_start": 1,
+          "page_end": 1,
+          "source_type": "document_overview"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The paper explains dual-level retrieval, incremental graph updates, and evaluation against baseline RAG systems.",
+          "page_start": 2,
+          "page_end": 3,
+          "source_type": "chapter_summary"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Experiments report improved answer quality and efficiency while maintaining a compact retrieval context.",
+          "page_start": 7,
+          "page_end": 8,
+          "source_type": "section_summary"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "q2_compare_lightrag_graphrag",
+      "kind": "technical_comparison",
+      "question": "Compare lightRAG with GraphRAG.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "LightRAG performs dual-level retrieval over entity facts and relation paths, then assembles compact context for generation.",
+          "page_start": 3,
+          "page_end": 4,
+          "source_type": "chunk"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "GraphRAG organizes extracted knowledge into communities and uses graph summaries to answer broad global questions.",
+          "page_start": 4,
+          "page_end": 5,
+          "source_type": "chunk"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Compared with GraphRAG, LightRAG emphasizes lightweight incremental updates and local-global retrieval over the graph.",
+          "page_start": 5,
+          "page_end": 6,
+          "source_type": "chunk"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "q3_performance_ablated_lightrag",
+      "kind": "performance",
+      "question": "Performance of ablated versions of LightRAG.",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Ablation results show full LightRAG achieves the best performance, while removing graph retrieval reduces F1 on multi-hop tasks.",
+          "page_start": 8,
+          "page_end": 8,
+          "source_type": "performance_fact"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Without the relation-level component, the ablated system loses accuracy because it cannot recover multi-hop evidence paths.",
+          "page_start": 8,
+          "page_end": 9,
+          "source_type": "table_record"
+        },
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The formula used for relative improvement is (full score - ablated score) / ablated score, reported alongside the ablation table.",
+          "page_start": 9,
+          "page_end": 9,
+          "source_type": "raw_block"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "visual_image_latency_curve",
+      "kind": "method_explanation",
+      "question": "What does the latency figure show?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Figure 2 shows the latency curve: LightRAG keeps lower response latency than the graph-summary baseline as corpus size grows.",
+          "page_start": 6,
+          "page_end": 6,
+          "source_type": "figure_caption"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "visual_table_performance_scores",
+      "kind": "performance",
+      "question": "Which method has the best score in the performance table?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "Table 1 reports F1 scores: LightRAG 73.4, GraphRAG 69.8, NaiveRAG 61.0; LightRAG is highest.",
+          "page_start": 7,
+          "page_end": 7,
+          "source_type": "table_record"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
+    },
+    {
+      "case_id": "formula_relative_improvement",
+      "kind": "performance",
+      "question": "What formula is used for relative improvement?",
+      "target_chat_label": "A",
+      "target_session_label": "1",
+      "seeded_hits": [
+        {
+          "chat_label": "A",
+          "doc_label": "paper_a",
+          "content": "The formula for relative improvement is (full score - ablated score) / ablated score, shown in the equation block near the ablation table.",
+          "page_start": 9,
+          "page_end": 9,
+          "source_type": "raw_block"
+        }
+      ],
+      "expected": {
+        "required_citation_doc_labels": [
+          "paper_a"
+        ],
+        "forbidden_citation_doc_labels": [],
+        "no_answer_phrase_required": false,
+        "min_documents_used": 1,
+        "max_documents_used": 1
+      }
     }
   ]
 }
